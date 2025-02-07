@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,7 +18,13 @@ import {
   Clock,
   Zap,
   Building,
-  Award
+  Award,
+  LineChart,
+  ShieldCheck,
+  TrendingUp,
+  Target,
+  Scale,
+  FileSearch
 } from "lucide-react";
 
 const Index = () => {
@@ -37,42 +42,42 @@ const Index = () => {
 
   const features = [
     {
-      icon: <BarChart2 className="w-6 h-6 text-blue-500" />,
-      title: "Portfolio Analytics",
-      description: "Real-time insights and performance tracking"
+      icon: <LineChart className="w-6 h-6 text-blue-500" />,
+      title: "Real-Time Financial Analysis",
+      description: "Live SEC filings analysis and financial health monitoring"
     },
     {
-      icon: <Lock className="w-6 h-6 text-green-500" />,
-      title: "Compliance Automation",
-      description: "Automated compliance monitoring and reporting"
+      icon: <ShieldCheck className="w-6 h-6 text-green-500" />,
+      title: "Risk Assessment",
+      description: "Continuous operational and financial risk evaluation"
     },
     {
-      icon: <Users className="w-6 h-6 text-purple-500" />,
-      title: "Client Management",
-      description: "Streamlined client communication and reporting"
+      icon: <TrendingUp className="w-6 h-6 text-purple-500" />,
+      title: "Market Intelligence",
+      description: "Dynamic market positioning and competitor analysis"
     },
     {
-      icon: <FileText className="w-6 h-6 text-orange-500" />,
-      title: "Document Processing",
-      description: "AI-powered document analysis and extraction"
+      icon: <Target className="w-6 h-6 text-orange-500" />,
+      title: "Growth Analytics",
+      description: "AI-powered growth opportunity identification"
     },
     {
-      icon: <Bot className="w-6 h-6 text-teal-500" />,
-      title: "AI Insights",
-      description: "Advanced analytics and predictive insights"
+      icon: <Scale className="w-6 h-6 text-teal-500" />,
+      title: "Compliance Monitoring",
+      description: "Real-time regulatory compliance tracking"
     },
     {
-      icon: <Sparkles className="w-6 h-6 text-yellow-500" />,
-      title: "Smart Automation",
-      description: "Intelligent workflow automation tools"
+      icon: <FileSearch className="w-6 h-6 text-yellow-500" />,
+      title: "Due Diligence Automation",
+      description: "7-dimensional automated analysis framework"
     }
   ];
 
   const stats = [
-    { value: "85%", label: "Time Saved in Due Diligence" },
-    { value: "60%", label: "Reduced Compliance Costs" },
-    { value: "3x", label: "Faster Document Processing" },
-    { value: "99.9%", label: "Accuracy Rate" }
+    { value: "24/7", label: "Real-Time Monitoring" },
+    { value: "7+", label: "Analysis Dimensions" },
+    { value: "500+", label: "Data Points Analyzed" },
+    { value: "60%", label: "Time Saved in Analysis" }
   ];
 
   const faqs = [
@@ -98,6 +103,25 @@ const Index = () => {
     }
   ];
 
+  const methodologySteps = [
+    {
+      title: "Data Collection",
+      description: "Automated gathering of financial data, market intelligence, leadership profiles, and regulatory records."
+    },
+    {
+      title: "Multi-Dimensional Analysis",
+      description: "Comprehensive evaluation across 7 critical dimensions using advanced AI algorithms."
+    },
+    {
+      title: "Risk Assessment",
+      description: "Real-time monitoring of operational, financial, and compliance risks."
+    },
+    {
+      title: "Growth Analytics",
+      description: "AI-powered identification of expansion opportunities and innovation potential."
+    }
+  ];
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Background Gradient Elements */}
@@ -110,14 +134,14 @@ const Index = () => {
           <div className="inline-block mb-4 px-4 py-1.5 glass-card">
             <span className="text-primary text-sm font-medium flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              Revolutionizing Due Diligence
+              AI-Powered Due Diligence Platform
             </span>
           </div>
           <h1 className="text-5xl md:text-6xl font-bold mb-6 gradient-text leading-tight">
-            Streamline Your Investment Due Diligence
+            Transform Your Investment Due Diligence with AI
           </h1>
           <p className="text-muted-foreground text-xl mb-8 leading-relaxed max-w-3xl mx-auto">
-            AI-powered platform that automates portfolio management, compliance, and reporting for investment professionals.
+            Save 60% of your time with our AI-powered platform that performs comprehensive due diligence across 7 critical dimensions. Get real-time insights for just $499/month.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4 items-center">
             <Button 
@@ -126,7 +150,7 @@ const Index = () => {
               onMouseEnter={() => setIsHovered(true)}
               onMouseLeave={() => setIsHovered(false)}
             >
-              Get Started 
+              Start Free Trial 
               <ChevronRight className={`ml-2 transition-transform duration-300 ${isHovered ? 'translate-x-1' : ''}`} />
             </Button>
             <Button 
@@ -134,18 +158,36 @@ const Index = () => {
               variant="outline" 
               className="px-8 glass-card hover:bg-primary/10 rounded-2xl h-12"
             >
-              Schedule Demo
+              View Demo Report
             </Button>
           </div>
+        </div>
+      </section>
+
+      {/* Methodology Section */}
+      <section className="container mx-auto px-4 py-24">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold mb-4 gradient-text">Our AI-Powered Methodology</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Comprehensive 7-dimensional analysis framework that covers every aspect of due diligence
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          {methodologySteps.map((step, index) => (
+            <Card key={index} className="p-6 hover-scale glass-card">
+              <h3 className="text-xl font-semibold mb-2">{step.title}</h3>
+              <p className="text-muted-foreground">{step.description}</p>
+            </Card>
+          ))}
         </div>
       </section>
 
       {/* Features Section */}
       <section className="container mx-auto px-4 py-24">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold mb-4 gradient-text">Powerful Features</h2>
+          <h2 className="text-3xl font-bold mb-4 gradient-text">Platform Features</h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Everything you need to streamline your investment processes and make data-driven decisions.
+            Everything you need for comprehensive due diligence analysis
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
@@ -179,9 +221,9 @@ const Index = () => {
       {/* Use Cases Section */}
       <section className="container mx-auto px-4 py-24">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold mb-4 gradient-text">Who Uses Our Platform?</h2>
+          <h2 className="text-3xl font-bold mb-4 gradient-text">Who Benefits Most?</h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Trusted by leading investment firms to streamline their operations and make better decisions.
+            Trusted by leading investment professionals to make data-driven decisions
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -189,21 +231,21 @@ const Index = () => {
             <Building className="w-8 h-8 text-blue-500 mb-4" />
             <h3 className="text-xl font-semibold mb-2">Investment Firms</h3>
             <p className="text-muted-foreground">
-              Streamline due diligence and portfolio management with AI-powered insights.
+              Cut due diligence time by 60% while gaining deeper insights through AI-powered analysis
             </p>
           </Card>
           <Card className="p-6 hover-scale glass-card">
             <Award className="w-8 h-8 text-purple-500 mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Wealth Managers</h3>
+            <h3 className="text-xl font-semibold mb-2">Portfolio Managers</h3>
             <p className="text-muted-foreground">
-              Enhance client reporting and automate compliance processes.
+              Monitor investments in real-time with comprehensive risk assessment
             </p>
           </Card>
           <Card className="p-6 hover-scale glass-card">
             <Users className="w-8 h-8 text-green-500 mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Family Offices</h3>
+            <h3 className="text-xl font-semibold mb-2">Due Diligence Teams</h3>
             <p className="text-muted-foreground">
-              Centralize investment data and improve collaboration.
+              Automate research and analysis across 7 critical dimensions
             </p>
           </Card>
         </div>
@@ -299,4 +341,3 @@ const Index = () => {
 };
 
 export default Index;
-
