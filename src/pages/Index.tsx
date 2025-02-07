@@ -1,11 +1,38 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ChevronRight, BarChart2, Lock, Users, FileText, Bot, ArrowRight, Sparkles } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { 
+  ChevronRight, 
+  BarChart2, 
+  Lock, 
+  Users, 
+  FileText, 
+  Bot, 
+  ArrowRight, 
+  Sparkles,
+  Mail,
+  Plus,
+  Minus,
+  Clock,
+  Zap,
+  Building,
+  Award
+} from "lucide-react";
 
 const Index = () => {
   const [isHovered, setIsHovered] = useState(false);
+  const [email, setEmail] = useState("");
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+
+  const handleNewsletterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email) {
+      toast.success("Thank you for subscribing!");
+      setEmail("");
+    }
+  };
 
   const features = [
     {
@@ -37,6 +64,36 @@ const Index = () => {
       icon: <Sparkles className="w-6 h-6 text-yellow-500" />,
       title: "Smart Automation",
       description: "Intelligent workflow automation tools"
+    }
+  ];
+
+  const stats = [
+    { value: "85%", label: "Time Saved in Due Diligence" },
+    { value: "60%", label: "Reduced Compliance Costs" },
+    { value: "3x", label: "Faster Document Processing" },
+    { value: "99.9%", label: "Accuracy Rate" }
+  ];
+
+  const faqs = [
+    {
+      question: "How does the AI-powered document processing work?",
+      answer: "Our advanced AI technology automatically extracts, categorizes, and analyzes information from various document types including PDFs, emails, and financial statements. It identifies key data points, risks, and opportunities while maintaining accuracy and compliance."
+    },
+    {
+      question: "What security measures are in place to protect sensitive data?",
+      answer: "We implement bank-level encryption, role-based access controls, and regular security audits. All data is encrypted both in transit and at rest, and we maintain compliance with industry standards including SOC 2 and GDPR."
+    },
+    {
+      question: "Can I integrate with existing systems?",
+      answer: "Yes, our platform offers seamless integration with popular CRM systems, email providers, and financial software. We provide APIs and pre-built connectors for major platforms, making integration straightforward."
+    },
+    {
+      question: "How long does implementation take?",
+      answer: "Most clients are up and running within 2-3 weeks. Our dedicated implementation team provides comprehensive training and support throughout the onboarding process."
+    },
+    {
+      question: "What kind of support do you offer?",
+      answer: "We provide 24/7 technical support, dedicated account managers, and regular check-ins to ensure your success. Our team of industry experts is always available to help optimize your workflows."
     }
   ];
 
@@ -104,6 +161,114 @@ const Index = () => {
         </div>
       </section>
 
+      {/* Stats Section */}
+      <section className="container mx-auto px-4 py-24">
+        <div className="glass-card p-12">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            {stats.map((stat, index) => (
+              <div key={index} className="text-center">
+                <div className="text-4xl font-bold gradient-text mb-2">{stat.value}</div>
+                <div className="text-muted-foreground">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Use Cases Section */}
+      <section className="container mx-auto px-4 py-24">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold mb-4 gradient-text">Who Uses Our Platform?</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Trusted by leading investment firms to streamline their operations and make better decisions.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <Card className="p-6 hover-scale glass-card">
+            <Building className="w-8 h-8 text-blue-500 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Investment Firms</h3>
+            <p className="text-muted-foreground">
+              Streamline due diligence and portfolio management with AI-powered insights.
+            </p>
+          </Card>
+          <Card className="p-6 hover-scale glass-card">
+            <Award className="w-8 h-8 text-purple-500 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Wealth Managers</h3>
+            <p className="text-muted-foreground">
+              Enhance client reporting and automate compliance processes.
+            </p>
+          </Card>
+          <Card className="p-6 hover-scale glass-card">
+            <Users className="w-8 h-8 text-green-500 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Family Offices</h3>
+            <p className="text-muted-foreground">
+              Centralize investment data and improve collaboration.
+            </p>
+          </Card>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="container mx-auto px-4 py-24">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold mb-4 gradient-text">Frequently Asked Questions</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Get answers to common questions about our platform.
+          </p>
+        </div>
+        <div className="max-w-3xl mx-auto space-y-4">
+          {faqs.map((faq, index) => (
+            <Card 
+              key={index}
+              className="glass-card overflow-hidden"
+            >
+              <button
+                className="w-full p-6 text-left flex items-center justify-between hover:bg-primary/5"
+                onClick={() => setExpandedFaq(expandedFaq === index ? null : index)}
+              >
+                <span className="font-semibold">{faq.question}</span>
+                {expandedFaq === index ? (
+                  <Minus className="w-5 h-5 text-primary" />
+                ) : (
+                  <Plus className="w-5 h-5 text-primary" />
+                )}
+              </button>
+              {expandedFaq === index && (
+                <div className="p-6 pt-0 text-muted-foreground">
+                  {faq.answer}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* Newsletter Section */}
+      <section className="container mx-auto px-4 py-24">
+        <div className="glass-card p-12 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent" />
+          <div className="relative z-10 max-w-2xl mx-auto text-center">
+            <Mail className="w-12 h-12 text-primary mx-auto mb-6" />
+            <h2 className="text-3xl font-bold mb-4 gradient-text">Stay Updated</h2>
+            <p className="text-muted-foreground mb-8">
+              Subscribe to our newsletter for the latest updates, industry insights, and expert tips.
+            </p>
+            <form onSubmit={handleNewsletterSubmit} className="flex gap-4 max-w-md mx-auto">
+              <Input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="glass-card"
+              />
+              <Button type="submit" className="neo-button whitespace-nowrap">
+                Subscribe <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </form>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="container mx-auto px-4 py-24">
         <div className="max-w-4xl mx-auto text-center glass-card p-12 relative overflow-hidden">
@@ -113,9 +278,18 @@ const Index = () => {
             <p className="text-muted-foreground mb-8">
               Join leading investment firms using our platform to make better decisions faster.
             </p>
-            <Button size="lg" className="neo-button px-8 rounded-2xl h-12">
-              Start Free Trial <ArrowRight className="ml-2" />
-            </Button>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Button size="lg" className="neo-button px-8 rounded-2xl h-12">
+                Start Free Trial <ArrowRight className="ml-2" />
+              </Button>
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="glass-card hover:bg-primary/10 px-8 rounded-2xl h-12"
+              >
+                Schedule Demo <Clock className="ml-2" />
+              </Button>
+            </div>
           </div>
         </div>
       </section>
