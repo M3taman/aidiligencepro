@@ -6,6 +6,7 @@ import StatsSection from "@/components/landing/StatsSection";
 import UseCasesSection from "@/components/landing/UseCasesSection";
 import DemoSection from "@/components/landing/DemoSection";
 import PricingSection from "@/components/landing/PricingSection";
+import BlogSection from "@/components/landing/BlogSection";
 import FaqSection from "@/components/landing/FaqSection";
 import NewsletterSection from "@/components/landing/NewsletterSection";
 import CtaSection from "@/components/landing/CtaSection";
@@ -24,6 +25,7 @@ const Index = () => {
       <UseCasesSection />
       <DemoSection />
       <PricingSection />
+      <BlogSection />
       <FaqSection />
       <NewsletterSection />
       <CtaSection />
