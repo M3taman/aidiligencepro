@@ -66,6 +66,17 @@
   }
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .glass-card {
   @apply bg-white/10 dark:bg-white/5 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 dark:border-white/10;
 }
@@ -75,7 +86,7 @@
 }
 
 .fade-in {
-  @apply opacity-0 animate-fade-in;
+  @apply opacity-0 animate-[fadeIn_0.6s_ease-out_forwards];
 }
 
 .neo-button {
@@ -85,4 +96,3 @@
 .gradient-text {
   @apply bg-gradient-to-r from-primary via-primary/80 to-primary/60 bg-clip-text text-transparent font-bold;
 }
-
