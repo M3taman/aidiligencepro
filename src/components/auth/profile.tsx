@@ -1,8 +1,8 @@
-// src/components/auth/profile.tsx
+
 import React from 'react';
 import { getAuth, signOut } from 'firebase/auth';
 import { useAuth } from './authContext';
-import {app} from '../../firebase'
+import { app } from '../../firebase';
 
 const Profile = () => {
     const { user, loading } = useAuth();
@@ -25,12 +25,11 @@ const Profile = () => {
     };
 
     return (
-        
+        <div className="p-4">
             <h2>Welcome, {user.email}</h2>
             <button onClick={handleSignOut}>Sign Out</button>
-        
+        </div>
     );
 };
 
 export default Profile;
-
