@@ -1,7 +1,7 @@
-// src/components/auth/authContext.tsx
+
 import React, { createContext, useState, useEffect, ReactNode, useContext } from 'react';
 import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
-import {app} from '../../firebase'
+import {app} from '../../firebase';
 
 interface AuthContextProps {
     user: User | null;
@@ -34,9 +34,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     return (
-        
+        <AuthContext.Provider value={value}>
             {children}
-        
+        </AuthContext.Provider>
     );
 };
 
