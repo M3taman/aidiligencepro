@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from 'react-router-dom';
 import { toast } from "sonner";
-import { User, Mail, LogOut } from "lucide-react";
+import { User, Mail, LogOut, Calendar } from "lucide-react";
 
 const Profile = () => {
-    const { user, loading } = useAuth();
+    const { user, loading, trialStatus } = useAuth();
     const navigate = useNavigate();
 
     if (loading) {
@@ -38,6 +38,14 @@ const Profile = () => {
         }
     };
 
+    const formatDate = (date: Date) => {
+        return new Intl.DateTimeFormat('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }).format(date);
+    };
+
     return (
         <div className="container mx-auto px-4 py-8">
             <Card className="max-w-2xl mx-auto">
@@ -53,6 +61,20 @@ const Profile = () => {
                         <div>
                             <p className="text-sm text-muted-foreground">Email</p>
                             <p className="font-medium">{user.email}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 p-4 bg-secondary/50 rounded-lg">
+                        <Calendar className="w-5 h-5 text-muted-foreground" />
+                        <div>
+                            <p className="text-sm text-muted-foreground">Trial Status</p>
+                            <p className="font-medium">
+                                {trialStatus.isActive ? (
+                                    `Trial active until ${formatDate(trialStatus.endDate!)}`
+                                ) : (
+                                    "Trial expired"
+                                )}
+                            </p>
                         </div>
                     </div>
                     
