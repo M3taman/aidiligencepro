@@ -14,7 +14,7 @@ const CtaSection = () => {
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <Button size="lg" className="neo-button px-8 rounded-2xl h-12">
-              Start Free Trial <ArrowRight className="ml-2" />
+              Start 7-Day Trial <ArrowRight className="ml-2" />
             </Button>
             <Button 
               size="lg" 

@@ -53,7 +53,7 @@ const PricingSection = () => {
       <div className="text-center mb-16">
         <h2 className="text-3xl font-bold mb-4 gradient-text">Simple, Transparent Pricing</h2>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Start your 14-day free trial today. No credit card required.
+          Start your 7-day free trial today. No credit card required.
         </p>
       </div>
       

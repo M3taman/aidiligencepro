@@ -1,4 +1,3 @@
-
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowRight, Play, FileText, Database, Search, AlertCircle } from "lucide-react";
@@ -14,7 +13,6 @@ const DemoSection = () => {
       title: "Free 7-Day Trial",
       description: "Start your due diligence journey with full access to our AI-powered platform"
     });
-    // Navigate to trial signup
     window.location.href = "/register";
   };
 
@@ -37,7 +35,6 @@ const DemoSection = () => {
       </div>
 
       <div className="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-        {/* AI Due Diligence Card */}
         <Card className="p-8 hover-scale glass-card">
           <div className="space-y-6">
             <div className="space-y-2">
@@ -78,7 +75,6 @@ const DemoSection = () => {
           </div>
         </Card>
 
-        {/* Video Demo Card */}
         <Card className="p-8 hover-scale glass-card">
           <div className="aspect-video bg-gradient-to-br from-primary/20 to-transparent rounded-lg mb-6 flex items-center justify-center relative overflow-hidden">
             <div className="absolute inset-0 bg-black/40" />

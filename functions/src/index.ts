@@ -1,7 +1,7 @@
 import * as functions from "firebase-functions";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODEL_NAME = "gemini-1.0-pro";
+const MODEL_NAME = "gemini-pro";
 const genAI = new GoogleGenerativeAI(functions.config().gemini.api_key);
 
 const researchSources = [
