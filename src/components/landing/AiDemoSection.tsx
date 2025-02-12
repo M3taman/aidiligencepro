@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,8 +36,7 @@ const AiDemoSection = () => {
       toast.success("Analysis generated successfully!");
     } catch (error) {
       console.error("Analysis error:", error);
-      toast.error("Please sign up to perform full analysis");
-      navigate("/register");
+      toast.error("Error generating analysis. Please try again.");
     } finally {
       setIsLoading(false);
     }

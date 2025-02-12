@@ -1,9 +1,9 @@
-
 import * as functions from "firebase-functions";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const MODEL_NAME = "gemini-pro";
-const genAI = new GoogleGenerativeAI(functions.config().gemini.api_key);
+const API_KEY = "AIzaSyDQTEHDGhtEC0lpY41t4HZvFyPJd-HX0-M";
+const genAI = new GoogleGenerativeAI(API_KEY);
 
 const researchSources = [
   "SEC EDGAR Filings",
@@ -19,20 +19,13 @@ const researchSources = [
 export const generateDueDiligence = functions
   .runWith({
     cors: {
-      origin: true, // Allow all origins
-      methods: ['POST', 'OPTIONS'], // Allow POST and OPTIONS methods
-      allowedHeaders: ['Content-Type', 'Authorization'], // Allow necessary headers
-      maxAge: 86400, // Cache preflight requests for 24 hours
+      origin: true,
+      methods: ['POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      maxAge: 86400,
     }
   })
   .https.onCall(async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "You must be signed in to use this function."
-      );
-    }
-
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
     const prompt = `
       Perform a comprehensive due diligence analysis for: ${data.company}
