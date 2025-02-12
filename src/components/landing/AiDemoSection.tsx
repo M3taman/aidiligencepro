@@ -8,6 +8,11 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
+// Define the type for the Cloud Function response
+type DueDiligenceResponse = {
+  data: string;
+};
+
 const AiDemoSection = () => {
   const [company, setCompany] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,7 +28,10 @@ const AiDemoSection = () => {
 
     setIsLoading(true);
     try {
-      const generateDueDiligence = httpsCallable(functions, 'generateDueDiligence');
+      const generateDueDiligence = httpsCallable<{ company: string }, DueDiligenceResponse>(
+        functions,
+        'generateDueDiligence'
+      );
       const result = await generateDueDiligence({ company });
       setAnalysis(result.data.data);
       toast.success("Analysis generated successfully!");
