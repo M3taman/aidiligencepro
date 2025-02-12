@@ -28,6 +28,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/resources" element={<NotFound />} /> {/* Temporarily point to NotFound until Resources page is created */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>

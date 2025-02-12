@@ -1,10 +1,10 @@
-
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const blogPosts = [
   {
@@ -36,6 +36,7 @@ const blogPosts = [
 const BlogSection = () => {
   const [expandedPosts, setExpandedPosts] = useState<number[]>([]);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   const togglePost = (index: number) => {
     setExpandedPosts(prev => 
@@ -54,7 +55,7 @@ const BlogSection = () => {
 
   const handleViewAll = () => {
     toast.info("Redirecting to resources library...");
-    // Navigation logic will be implemented later
+    navigate('/resources');  // Navigate to resources page
   };
 
   return (
