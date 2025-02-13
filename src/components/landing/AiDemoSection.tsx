@@ -56,14 +56,14 @@ const AiDemoSection = () => {
           <span className="text-sm font-medium text-primary">AI-Powered Analysis</span>
         </div>
         <h2 className="text-4xl font-bold mb-4 gradient-text">
-          Experience AI Due Diligence
+          Experience Advanced AI Due Diligence
         </h2>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Try our AI analysis engine with any company name. Get a preview of our comprehensive due diligence report.
+          Get a comprehensive due diligence report powered by Gemini AI. Our analysis covers financials, market position, risks, and growth potential.
         </p>
       </div>
 
-      <Card className="max-w-3xl mx-auto p-8 glass-card">
+      <Card className="max-w-4xl mx-auto p-8 glass-card shadow-xl">
         <div className="flex flex-col gap-6">
           <div className="flex gap-4">
             <div className="flex-1">
@@ -84,7 +84,7 @@ const AiDemoSection = () => {
               ) : (
                 <Search className="w-4 h-4 mr-2" />
               )}
-              Analyze
+              Generate Report
             </Button>
           </div>
 
@@ -94,8 +94,8 @@ const AiDemoSection = () => {
                 <CheckCircle2 className="w-5 h-5" />
                 <span className="font-medium">Analysis Complete</span>
               </div>
-              <div className="bg-background/50 p-6 rounded-lg backdrop-blur-sm">
-                <pre className="whitespace-pre-wrap text-sm">
+              <div className="bg-background/50 p-6 rounded-lg backdrop-blur-sm overflow-auto max-h-[600px]">
+                <pre className="whitespace-pre-wrap text-sm leading-relaxed">
                   {analysis}
                 </pre>
               </div>
@@ -103,13 +103,20 @@ const AiDemoSection = () => {
                 className="w-full neo-button"
                 onClick={() => navigate("/register")}
               >
-                Sign Up for Full Analysis
+                Sign Up for Full Analysis & Updates
               </Button>
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-            {["Real-time data", "7-dimensional analysis", "AI-powered insights"].map((feature, index) => (
+            {[
+              "12-dimensional analysis",
+              "Real-time market data",
+              "ESG insights",
+              "Risk assessment",
+              "Growth potential",
+              "Competitive analysis"
+            ].map((feature, index) => (
               <div
                 key={index}
                 className="flex items-center gap-2 text-sm text-muted-foreground"
