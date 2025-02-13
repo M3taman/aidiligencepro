@@ -1,3 +1,4 @@
+
 import * as functions from "firebase-functions";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -19,7 +20,7 @@ const researchSources = [
 export const generateDueDiligence = functions
   .runWith({
     cors: {
-      origin: true,
+      origin: ["https://419e6187-8142-4fcb-8486-c7d352111a8e.lovableproject.com"],
       methods: ['POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       maxAge: 86400,
@@ -93,20 +94,13 @@ export const generateDueDiligence = functions
 export const generateText = functions
   .runWith({
     cors: {
-      origin: true,
+      origin: ["https://419e6187-8142-4fcb-8486-c7d352111a8e.lovableproject.com"],
       methods: ['POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       maxAge: 86400,
     }
   })
   .https.onCall(async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-          "unauthenticated",
-          "You must be signed in to use this function."
-      );
-    }
-
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
     const prompt = data.prompt;
 
@@ -118,9 +112,9 @@ export const generateText = functions
     } catch (error: any) {
       console.error("Gemini API error:", error);
       throw new functions.https.HttpsError(
-          "internal",
-          "Error generating text.",
-          error
+        "internal",
+        "Error generating text.",
+        error
       );
     }
 });
