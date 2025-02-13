@@ -11,6 +11,7 @@ import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import Profile from './components/auth/Profile';
 import Navbar from './components/layout/Navbar';
+import ResourcesPage from './pages/Resources';
 
 const queryClient = new QueryClient();
 
@@ -28,7 +29,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/profile" element={<Profile />} />
-              <Route path="/resources" element={<NotFound />} /> {/* Temporarily point to NotFound until Resources page is created */}
+              <Route path="/resources" element={<ResourcesPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>
