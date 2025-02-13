@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -5,9 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Bot, Loader2, Search, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { getFunctions, httpsCallable } from "firebase/functions";
 
-// Define the type for the Cloud Function response
 type DueDiligenceResponse = {
   data: string;
 };
@@ -17,7 +16,6 @@ const AiDemoSection = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState("");
   const navigate = useNavigate();
-  const functions = getFunctions();
 
   const handleAnalysis = async () => {
     if (!company.trim()) {
@@ -27,12 +25,20 @@ const AiDemoSection = () => {
 
     setIsLoading(true);
     try {
-      const generateDueDiligence = httpsCallable<{ company: string }, DueDiligenceResponse>(
-        functions,
-        'generateDueDiligence'
-      );
-      const result = await generateDueDiligence({ company });
-      setAnalysis(result.data.data);
+      const response = await fetch('https://us-central1-ai-diligence.cloudfunctions.net/generateDueDiligence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ company }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+
+      const result = await response.json();
+      setAnalysis(result.data);
       toast.success("Analysis generated successfully!");
     } catch (error) {
       console.error("Analysis error:", error);
