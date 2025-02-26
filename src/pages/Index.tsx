@@ -1,4 +1,4 @@
-
+import React from 'react';
 import HeroSection from "@/components/landing/HeroSection";
 import MethodologySection from "@/components/landing/MethodologySection";
 import FeaturesSection from "@/components/landing/FeaturesSection";

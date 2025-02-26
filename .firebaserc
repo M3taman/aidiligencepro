@@ -1,5 +1,19 @@
 {
   "projects": {
     "default": "ai-diligence"
+  },
+  "targets": {
+    "ai-diligence": {
+      "hosting": {
+        "aidiligence-pro": [
+          "ai-diligence"
+        ]
+      }
+    }
+  },
+  "etags": {
+    "ai-diligence": {
+      "extensionInstances": {}
+    }
   }
 }
