@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { app } from '../../firebase';
+import app, { auth } from '../../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +18,6 @@ const Login = () => {
     setLoading(true);
     
     try {
-      const auth = getAuth(app);
       await signInWithEmailAndPassword(auth, email, password);
       toast.success("Login successful", {
         description: "Welcome back!"
@@ -76,7 +75,12 @@ const Login = () => {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">Password</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="password" className="text-sm font-medium">Password</label>
+                <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
               <Input
                 id="password"
                 type="password"
@@ -84,6 +88,7 @@ const Login = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="Enter your password"
+                autoComplete="current-password"
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>

@@ -1,4 +1,3 @@
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
@@ -7,13 +6,13 @@
  
 @layer base {
   :root {
-    --background: 210 40% 98%;
+    --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -26,7 +25,7 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
-    --radius: 1rem;
+    --radius: 0.5rem;
   }
 
   .dark {
@@ -36,7 +35,7 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
+    --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -95,4 +94,140 @@
 
 .gradient-text {
   @apply bg-gradient-to-r from-primary via-primary/80 to-primary/60 bg-clip-text text-transparent font-bold;
+}
+
+/* Animation classes */
+@layer utilities {
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+  
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+  
+  @keyframes blob {
+    0% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(30px, -50px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+  }
+}
+
+/* Custom styles */
+.neo-button {
+  background: linear-gradient(145deg, var(--primary), var(--primary-foreground));
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.neo-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* Prose styles for blog content */
+.prose {
+  max-width: 65ch;
+  color: var(--foreground);
+}
+
+.prose a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.prose strong {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.prose ol li:before {
+  color: hsl(var(--muted-foreground));
+}
+
+.prose blockquote {
+  color: hsl(var(--muted-foreground));
+  border-left-color: hsl(var(--border));
+}
+
+.prose h1, 
+.prose h2, 
+.prose h3, 
+.prose h4 {
+  color: hsl(var(--foreground));
+  font-weight: 700;
+}
+
+.prose code {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.prose img {
+  border-radius: var(--radius);
+}
+
+.dark .prose {
+  color: hsl(var(--foreground));
+}
+
+.dark .prose a {
+  color: hsl(var(--primary));
+}
+
+.dark .prose strong {
+  color: hsl(var(--foreground));
+}
+
+.dark .prose ol li:before {
+  color: hsl(var(--muted-foreground));
+}
+
+.dark .prose blockquote {
+  color: hsl(var(--muted-foreground));
+  border-left-color: hsl(var(--border));
+}
+
+.dark .prose h1, 
+.dark .prose h2, 
+.dark .prose h3, 
+.dark .prose h4 {
+  color: hsl(var(--foreground));
+}
+
+.dark .prose code {
+  color: hsl(var(--foreground));
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
 }

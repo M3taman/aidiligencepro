@@ -10,7 +10,7 @@ const Progress = React.forwardRef<
   <ProgressPrimitive.Root
     ref={ref}
     className={cn(
-      "relative h-4 w-full overflow-hidden rounded-full bg-secondary",
+      "relative h-2 w-full overflow-hidden rounded-full bg-primary/20",
       className
     )}
     {...props}
@@ -23,4 +23,43 @@ const Progress = React.forwardRef<
 ))
 Progress.displayName = ProgressPrimitive.Root.displayName
 
-export { Progress }
+const ProgressIndicator = React.forwardRef<
+  React.ElementRef<typeof ProgressPrimitive.Indicator>,
+  React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Indicator>
+>(({ className, ...props }, ref) => (
+  <ProgressPrimitive.Indicator
+    ref={ref}
+    className={cn(
+      "h-full w-full flex-1 bg-primary transition-all",
+      className
+    )}
+    {...props}
+  />
+))
+ProgressIndicator.displayName = ProgressPrimitive.Indicator.displayName
+
+const ProgressLabel = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("text-sm font-medium text-primary", className)}
+    {...props}
+  />
+))
+ProgressLabel.displayName = "ProgressLabel"
+
+const ProgressValue = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("text-sm font-medium text-primary ml-auto", className)}
+    {...props}
+  />
+))
+ProgressValue.displayName = "ProgressValue"
+
+export { Progress, ProgressIndicator, ProgressLabel, ProgressValue }

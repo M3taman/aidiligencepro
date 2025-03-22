@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
-import { app } from '../../firebase';
+import app, { auth } from '../../firebase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,6 +135,7 @@ const Register = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="Enter your password (min. 6 characters)"
+                autoComplete="new-password"
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>

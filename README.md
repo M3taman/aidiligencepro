@@ -1,69 +1,146 @@
-# Welcome to your Lovable project
+# AI Diligence Pro
 
-## Project info
+AI-powered due diligence and report generation platform with Firebase Storage integration.
 
-**URL**: https://lovable.dev/projects/419e6187-8142-4fcb-8486-c7d352111a8e
+## Firebase Storage Integration
 
-## How can I edit this code?
+This project now includes Firebase Storage integration for file uploads and management. The following features have been implemented:
 
-There are several ways of editing your application.
+### File Manager
 
-**Use Lovable**
+A complete file management system that allows users to:
+- Upload files to different categories (general uploads, report attachments, blog images, profile pictures)
+- View and manage uploaded files
+- Download files
+- Delete files
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/419e6187-8142-4fcb-8486-c7d352111a8e) and start prompting.
+### Storage Security Rules
 
-Changes made via Lovable will be committed automatically to this repo.
+Firebase Storage security rules have been configured to:
+- Allow authenticated users to upload files to their own directories
+- Restrict file access based on user authentication
+- Organize files in separate folders based on their purpose
 
-**Use your preferred IDE**
+### File Upload Components
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+The following components and utilities have been created:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+1. **FileUpload Component**: A reusable UI component for file uploads
+2. **useFileUpload Hook**: A custom hook for managing file uploads
+3. **Storage Utilities**: Helper functions for interacting with Firebase Storage
 
-Follow these steps:
+## Getting Started
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+1. Clone the repository
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Set up Firebase:
+   - Create a Firebase project at [firebase.google.com](https://firebase.google.com)
+   - Enable Firebase Authentication and Storage
+   - Add your Firebase configuration to `src/firebase.ts`
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+4. Run the development server:
+   ```
+   npm run dev
+   ```
 
-# Step 3: Install the necessary dependencies.
-npm i
+## Deployment
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+Several deployment scripts are available:
+
+- `npm run deploy` - Deploy all Firebase services
+- `npm run deploy:hosting` - Deploy only Firebase Hosting
+- `npm run deploy:storage` - Deploy only Firebase Storage rules
+- `npm run deploy:interactive` - Interactive deployment script with options
+
+## Firebase Emulators
+
+For local development, you can use Firebase Emulators:
+
+```
+npm run firebase:emulators
 ```
 
-**Edit a file directly in GitHub**
+This will start the Firebase emulators for Authentication, Firestore, Functions, and Storage.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## File Structure
 
-**Use GitHub Codespaces**
+- `src/components/ui/file-upload.tsx` - Reusable file upload component
+- `src/hooks/useFileUpload.ts` - Custom hook for file uploads
+- `src/utils/storageUtils.ts` - Firebase Storage utility functions
+- `src/pages/file-manager.tsx` - File manager page
+- `storage.rules` - Firebase Storage security rules
+- `firebase.json` - Firebase configuration
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Usage Examples
 
-## What technologies are used for this project?
+### Basic File Upload
 
-This project is built with .
+```tsx
+import { FileUpload } from '@/components/ui/file-upload';
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+const MyComponent = () => {
+  return (
+    <FileUpload
+      onUploadComplete={(files) => console.log('Uploaded files:', files)}
+      onUploadError={(error) => console.error('Upload error:', error)}
+      folder="uploads"
+      maxSize={5 * 1024 * 1024} // 5MB
+      buttonText="Upload Files"
+      multiple={true}
+    />
+  );
+};
+```
 
-## How can I deploy this project?
+### Using the useFileUpload Hook
 
-Simply open [Lovable](https://lovable.dev/projects/419e6187-8142-4fcb-8486-c7d352111a8e) and click on Share -> Publish.
+```tsx
+import { useFileUpload } from '@/hooks/useFileUpload';
 
-## I want to use a custom domain - is that possible?
+const MyComponent = () => {
+  const { 
+    uploadedFiles, 
+    uploadFiles, 
+    deleteUploadedFile, 
+    uploadProgress, 
+    uploadError, 
+    clearUploadedFiles 
+  } = useFileUpload({
+    folder: 'uploads',
+    maxSize: 10 * 1024 * 1024, // 10MB
+    onUploadComplete: (files) => {
+      console.log('Upload completed:', files);
+    },
+    onUploadError: (error) => {
+      console.error('Upload error:', error);
+    }
+  });
 
-We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)
+  return (
+    <div>
+      <input 
+        type="file" 
+        multiple 
+        onChange={(e) => uploadFiles(e.target.files)} 
+      />
+      {uploadProgress > 0 && <progress value={uploadProgress} max={100} />}
+      {uploadError && <div className="error">{uploadError}</div>}
+      {uploadedFiles.map((file) => (
+        <div key={file.path}>
+          <a href={file.url} target="_blank" rel="noopener noreferrer">
+            {file.name}
+          </a>
+          <button onClick={() => deleteUploadedFile(file.path)}>Delete</button>
+        </div>
+      ))}
+    </div>
+  );
+};
+```
+
+## License
+
+MIT

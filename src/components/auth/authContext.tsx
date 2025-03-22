@@ -1,7 +1,6 @@
-
 import React, { createContext, useState, useEffect, ReactNode, useContext } from 'react';
-import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
-import { app } from '../../firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from '../../firebase';
 
 interface AuthContextProps {
     user: User | null;
@@ -34,7 +33,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
 
     useEffect(() => {
-        const auth = getAuth(app);
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 // Get user's creation time and calculate trial end date

@@ -1,0 +1,89 @@
+{
+  "name": "AI Diligence Pro",
+  "short_name": "AI Diligence",
+  "description": "AI-powered due diligence and risk assessment platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "orientation": "portrait",
+  "categories": ["business", "productivity", "utilities"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "/screenshots/home.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Home page of AI Diligence Pro"
+    },
+    {
+      "src": "/screenshots/reports.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Reports dashboard"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Report",
+      "short_name": "New Report",
+      "description": "Create a new due diligence report",
+      "url": "/reports/new",
+      "icons": [{ "src": "/icons/new-report.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Reports",
+      "short_name": "Reports",
+      "description": "View your reports",
+      "url": "/reports",
+      "icons": [{ "src": "/icons/reports.png", "sizes": "192x192" }]
+    }
+  ]
+} 

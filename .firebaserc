@@ -5,8 +5,11 @@
   "targets": {
     "ai-diligence": {
       "hosting": {
-        "aidiligence-pro": [
+        "ai-diligence": [
           "ai-diligence"
+        ],
+        "aidiligence-pro": [
+          "aidiligence-pro"
         ]
       }
     }

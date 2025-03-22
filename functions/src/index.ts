@@ -1,31 +1,36 @@
 import { onRequest } from "firebase-functions/v2/https";
-import { defineString } from "firebase-functions/params";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import cors from 'cors';
 import fetch from 'node-fetch';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { defineSecret } from "firebase-functions/params";
+
+// Define secrets
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const ALPHA_VANTAGE_API_KEY = defineSecret("ALPHA_VANTAGE_API_KEY");
+const NEWS_API_KEY = defineSecret("NEWS_API_KEY");
+const SEC_API_KEY = defineSecret("SEC_API_KEY");
 
 // Initialize Firebase Admin
 initializeApp();
 
+// Update the model name to use the correct version
 const MODEL_NAME = "gemini-pro";
 
-// Define configuration parameters
-const GEMINI_API_KEY = defineString('GEMINI_APIKEY');
-const ALPHA_VANTAGE_KEY = defineString('ALPHAVANTAGE_KEY');
-const NEWS_API_KEY = defineString('NEWS_API_KEY');
-const LINKEDIN_API_KEY = defineString('LINKEDIN_API_KEY');
-const CRUNCHBASE_API_KEY = defineString('CRUNCHBASE_API_KEY');
-const BLOOMBERG_API_KEY = defineString('BLOOMBERG_API_KEY');
-
 // Initialize Gemini only when needed
-let genAI: any = null;
+let genAI: GoogleGenerativeAI | null = null;
 
-function initializeGenAI() {
-    if (!genAI && GEMINI_API_KEY.value()) {
-        genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-        console.log('Gemini AI initialized successfully');
+function initializeGenAI(apiKey: string) {
+    if (!genAI) {
+        try {
+            genAI = new GoogleGenerativeAI(apiKey);
+            console.log('Gemini AI initialized successfully with model:', MODEL_NAME);
+        }
+        catch (error) {
+            console.error('Error initializing Gemini AI:', error);
+            throw new Error('Failed to initialize Gemini AI');
+        }
     }
     return genAI;
 }
@@ -108,30 +113,12 @@ interface NewsResponse {
     }>;
 }
 
-interface SECFilingResponse {
+interface SECApiResponse {
     filings: Array<{
-        type: string;
-        filingDate: string;
-        description: string;
-        url: string;
-    }>;
-}
-
-interface SECCompanyInfo {
-    cik: string;
-    entityType: string;
-    sic: string;
-    sicDescription: string;
-    name: string;
-    tickers: string[];
-}
-
-interface SECFilingData {
-    recent: Array<{
-        form: string;
-        filingDate: string;
-        description: string;
-        accessionNumber: string;
+        formType: string;
+        filedAt: string;
+        description?: string;
+        linkToFilingDetails: string;
     }>;
 }
 
@@ -168,10 +155,8 @@ class RateLimiter {
     }
 }
 
-// Create rate limiters for each API
-const linkedInRateLimiter = new RateLimiter({ maxRequests: 30, timeWindow: 60000 }); // 30 requests per minute
-const crunchbaseRateLimiter = new RateLimiter({ maxRequests: 50, timeWindow: 60000 }); // 50 requests per minute
-const bloombergRateLimiter = new RateLimiter({ maxRequests: 20, timeWindow: 60000 }); // 20 requests per minute
+// Keep only the rate limiters we need
+const alphaVantageRateLimiter = new RateLimiter({ maxRequests: 5, timeWindow: 60000 }); // 5 requests per minute
 
 // Add retry logic for API calls
 async function retryWithBackoff<T>(
@@ -254,562 +239,127 @@ class APICache {
 
 const apiCache = new APICache();
 
-// Add currency conversion functionality
-interface ExchangeRateResponse {
-    "Realtime Currency Exchange Rate": {
-        "1. From_Currency Code": string;
-        "2. From_Currency Name": string;
-        "3. To_Currency Code": string;
-        "4. To_Currency Name": string;
-        "5. Exchange Rate": string;
-        "6. Last Refreshed": string;
-        "7. Time Zone": string;
-        "8. Bid Price": string;
-        "9. Ask Price": string;
+// Enhanced structure for due diligence reports
+interface DueDiligenceResponse {
+    companyName: string;
+    timestamp: string;
+    executiveSummary: {
+        overview: string;
+        keyFindings: string[];
+        riskRating: 'Low' | 'Medium' | 'High';
+        recommendation: string;
+    };
+    financialAnalysis: {
+        metrics: Record<string, string | number>;
+        trends: string[];
+        strengths: string[];
+        weaknesses: string[];
+    };
+    marketAnalysis: {
+        position: string;
+        competitors: string[];
+        marketShare: string;
+        swot: {
+            strengths: string[];
+            weaknesses: string[];
+            opportunities: string[];
+            threats: string[];
+        };
+    };
+    riskAssessment: {
+        financial: string[];
+        operational: string[];
+        market: string[];
+        regulatory: string[];
+        esg: string[];
+    };
+    recentDevelopments: {
+        news: {
+            title: string;
+            url: string;
+            date: string;
+            source: string;
+        }[];
+        filings: {
+            type: string;
+            date: string;
+            description: string;
+            url: string;
+        }[];
+        management: string[];
+        strategic: string[];
     };
 }
 
-class CurrencyConverter {
-    private static instance: CurrencyConverter;
-    private cache: Map<string, { rate: number; timestamp: number }> = new Map();
-    private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
-
-    private constructor() {}
-
-    static getInstance(): CurrencyConverter {
-        if (!CurrencyConverter.instance) {
-            CurrencyConverter.instance = new CurrencyConverter();
-        }
-        return CurrencyConverter.instance;
-    }
-
-    async getExchangeRate(fromCurrency: string, toCurrency: string = 'USD'): Promise<number> {
-        const cacheKey = `${fromCurrency}_${toCurrency}`;
-        const cachedRate = this.cache.get(cacheKey);
-
-        if (cachedRate && Date.now() - cachedRate.timestamp < this.CACHE_TTL) {
-            return cachedRate.rate;
-        }
-
-        try {
-            const url = `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${fromCurrency}&to_currency=${toCurrency}&apikey=${ALPHA_VANTAGE_KEY.value()}`;
-            const response = await fetch(url);
-            const data = await response.json() as ExchangeRateResponse;
-
-            if (!data["Realtime Currency Exchange Rate"]) {
-                throw new Error(`Failed to get exchange rate for ${fromCurrency}/${toCurrency}`);
-            }
-
-            const rate = parseFloat(data["Realtime Currency Exchange Rate"]["5. Exchange Rate"]);
-            this.cache.set(cacheKey, { rate, timestamp: Date.now() });
-            return rate;
-        } catch (error) {
-            console.error(`Error fetching exchange rate ${fromCurrency}/${toCurrency}:`, error);
-            return 1; // Default to 1 if conversion fails
-        }
-    }
-
-    async convertAmount(amount: number | string, fromCurrency: string, toCurrency: string = 'USD'): Promise<number> {
-        if (fromCurrency === toCurrency) {
-            return typeof amount === 'string' ? parseFloat(amount) : amount;
-        }
-
-        const numericAmount = typeof amount === 'string' ? 
-            parseFloat(amount.replace(/[^0-9.-]+/g, '')) : amount;
-
-        if (isNaN(numericAmount)) {
-            return 0;
-        }
-
-        const rate = await this.getExchangeRate(fromCurrency, toCurrency);
-        return numericAmount * rate;
-    }
-
-    formatCurrency(amount: number, currency: string = 'USD'): string {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currency,
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2
-        }).format(amount);
-    }
-}
-
-const currencyConverter = CurrencyConverter.getInstance();
-
 // Update getCompanyData to include currency conversion
-async function getCompanyData(companyName: string): Promise<OverviewResponse | { error: string; fallbackData: Partial<OverviewResponse> }> {
-    try {
-        const result = await getCompanyDataRaw(companyName);
-        
-        if ('error' in result) {
-            return result;
-        }
-
-        // Convert financial metrics to USD
-        const currency = result.Currency || 'USD';
-        const metrics = [
-            'MarketCapitalization',
-            'EBITDA',
-            'RevenueTTM',
-            'GrossProfitTTM',
-            'OperatingCashFlowTTM'
-        ];
-
-        for (const metric of metrics) {
-            if (result[metric] && result[metric] !== 'N/A') {
-                const usdValue = await currencyConverter.convertAmount(result[metric], currency);
-                result[`${metric}USD`] = currencyConverter.formatCurrency(usdValue);
-            }
-        }
-
-        return result;
-    } catch (error) {
-        console.error("Error in getCompanyData:", error);
-        return {
-            error: `Failed to fetch company data: ${error}`,
-            fallbackData: {
-                MarketCapitalization: 'N/A',
-                RevenueTTM: 'N/A',
-                ProfitMargin: 'N/A',
-                PERatio: 'N/A',
-                Industry: 'N/A',
-                Sector: 'N/A',
-                Description: 'N/A'
-            }
-        };
-    }
-}
-
-// Rename original getCompanyData to getCompanyDataRaw
-async function getCompanyDataRaw(companyName: string): Promise<OverviewResponse | { error: string; fallbackData: Partial<OverviewResponse> }> {
-    try {
-        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${companyName}&apikey=${ALPHA_VANTAGE_KEY.value()}`;
-        const searchResponse = await fetch(searchUrl);
-        const searchData = await searchResponse.json() as AlphaVantageResponse;
-
-        if (!searchData.bestMatches || searchData.bestMatches.length === 0) {
-            return {
-                error: `No symbol found for company: ${companyName}`,
-                fallbackData: {
-                    MarketCapitalization: 'N/A',
-                    RevenueTTM: 'N/A',
-                    ProfitMargin: 'N/A',
-                    PERatio: 'N/A',
-                    Industry: 'N/A',
-                    Sector: 'N/A',
-                    Description: 'N/A'
-                }
-            };
-        }
-
-        const symbol = searchData.bestMatches[0].symbol;
-        const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${ALPHA_VANTAGE_KEY.value()}`;
-        const overviewResponse = await fetch(overviewUrl);
-        const overview = await overviewResponse.json() as OverviewResponse;
-
-        if (!overview || overview.Note) {
-            return {
-                error: (overview as any).Note || `Could not retrieve overview data for symbol: ${symbol}`,
-                fallbackData: {
-                    MarketCapitalization: 'N/A',
-                    RevenueTTM: 'N/A',
-                    ProfitMargin: 'N/A',
-                    PERatio: 'N/A',
-                    Industry: 'N/A',
-                    Sector: 'N/A',
-                    Description: 'N/A'
-                }
-            };
-        }
-
-        return overview;
-    } catch (error) {
-        console.error("Error fetching company data:", error);
-        return {
-            error: `Failed to fetch company data: ${error}`,
-            fallbackData: {
-                MarketCapitalization: 'N/A',
-                RevenueTTM: 'N/A',
-                ProfitMargin: 'N/A',
-                PERatio: 'N/A',
-                Industry: 'N/A',
-                Sector: 'N/A',
-                Description: 'N/A'
-            }
-        };
-    }
-}
-
-// Update Yahoo Finance data fetching with currency conversion
-async function getYahooFinanceData(companyName: string): Promise<YahooFinanceQuote | null> {
-    try {
-        const data = await getYahooFinanceDataRaw(companyName);
-        
-        if (!data) {
-            return null;
-        }
-
-        // Convert financial metrics to USD
-        const currency = data.currency || 'USD';
-        const metrics = {
-            marketCap: data.marketCap,
-            enterpriseValue: data.enterpriseValue,
-            totalRevenue: data.totalRevenue,
-            ebitda: data.ebitda
-        };
-
-        const convertedMetrics: { [key: string]: number } = {};
-        for (const [key, value] of Object.entries(metrics)) {
-            if (value) {
-                convertedMetrics[`${key}USD`] = await currencyConverter.convertAmount(value, currency);
-            }
-        }
-
-        return {
-            ...data,
-            ...convertedMetrics
-        };
-    } catch (error) {
-        console.error("Error in getYahooFinanceData:", error);
-        return null;
-    }
-}
-
-// Rename original getYahooFinanceData to getYahooFinanceDataRaw
-async function getYahooFinanceDataRaw(companyName: string): Promise<YahooFinanceQuote | null> {
-    try {
-        // First search for the symbol
-        const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(companyName)}&quotesCount=1&newsCount=0&listsCount=0`;
-        const searchResponse = await fetch(searchUrl, {
-            headers: {
-                'User-Agent': 'Aidiligence/1.0'
-            }
-        });
-        const searchData = await searchResponse.json() as YahooSearchResponse;
-        
-        if (!searchData.quotes || searchData.quotes.length === 0) {
-            console.error(`No Yahoo Finance data found for: ${companyName}`);
-            return null;
-        }
-
-        const symbol = searchData.quotes[0].symbol;
-        
-        // Fetch detailed quote data
-        const quoteUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=summaryProfile,summaryDetail,financialData,defaultKeyStatistics`;
-        const quoteResponse = await fetch(quoteUrl, {
-            headers: {
-                'User-Agent': 'Aidiligence/1.0'
-            }
-        });
-        const quoteData = await quoteResponse.json() as YahooQuoteResponse;
-        
-        if (!quoteData.quoteSummary?.result?.[0]) {
-            throw new Error('Invalid Yahoo Finance response');
-        }
-
-        const result = quoteData.quoteSummary.result[0];
-        const { summaryProfile, summaryDetail, financialData, defaultKeyStatistics } = result;
-
-        return {
-            shortName: summaryProfile?.shortName || '',
-            longName: summaryProfile?.longName || '',
-            symbol: symbol,
-            exchange: summaryProfile?.exchange || '',
-            currency: summaryDetail?.currency || '',
-            marketCap: financialData?.marketCap?.raw || 0,
-            marketCapFormat: financialData?.marketCap?.fmt || 'N/A',
-            enterpriseValue: defaultKeyStatistics?.enterpriseValue?.raw || 0,
-            totalRevenue: financialData?.totalRevenue?.raw || 0,
-            revenueGrowth: financialData?.revenueGrowth?.raw || 0,
-            grossMargins: financialData?.grossMargins?.raw || 0,
-            operatingMargins: financialData?.operatingMargins?.raw || 0,
-            profitMargins: financialData?.profitMargins?.raw || 0,
-            ebitda: financialData?.ebitda?.raw || 0,
-            trailingPE: summaryDetail?.trailingPE?.raw || 0,
-            forwardPE: summaryDetail?.forwardPE?.raw || 0,
-            pegRatio: defaultKeyStatistics?.pegRatio?.raw || 0,
-            beta: defaultKeyStatistics?.beta?.raw || 0,
-            priceToBook: defaultKeyStatistics?.priceToBook?.raw || 0,
-            dividendYield: summaryDetail?.dividendYield?.raw || 0,
-            payoutRatio: summaryDetail?.payoutRatio?.raw || 0,
-            sector: summaryProfile?.sector || '',
-            industry: summaryProfile?.industry || '',
-            fullTimeEmployees: summaryProfile?.fullTimeEmployees || 0,
-            country: summaryProfile?.country || '',
-            website: summaryProfile?.website || '',
-            longBusinessSummary: summaryProfile?.longBusinessSummary || ''
-        };
-    } catch (error) {
-        console.error("Error fetching Yahoo Finance data:", error);
-        return null;
-    }
-}
-
-// Update Bloomberg data fetching with currency conversion
-async function getBloombergData(companyName: string): Promise<BloombergCompanyData | null> {
-    try {
-        const data = await getBloombergDataRaw(companyName);
-        
-        if (!data) {
-            return null;
-        }
-
-        // Convert financial metrics to USD
-        const metrics = {
-            price: data.marketData.price,
-            marketCap: data.marketData.marketCap,
-            revenue: data.financials.revenue,
-            netIncome: data.financials.netIncome,
-            assets: data.financials.assets,
-            liabilities: data.financials.liabilities,
-            equity: data.financials.equity,
-            cashFlow: data.financials.cashFlow
-        };
-
-        const convertedMetrics: { [key: string]: number } = {};
-        for (const [key, value] of Object.entries(metrics)) {
-            if (value) {
-                convertedMetrics[`${key}USD`] = await currencyConverter.convertAmount(value, data.marketData.currency || 'USD');
-            }
-        }
-
-        return {
-            ...data,
-            financialsUSD: convertedMetrics
-        };
-    } catch (error) {
-        console.error("Error in getBloombergData:", error);
-        return null;
-    }
-}
-
-// Rename original getBloombergData to getBloombergDataRaw
-async function getBloombergDataRaw(companyName: string): Promise<BloombergCompanyData | null> {
-    const cacheKey = `bloomberg_${companyName.toLowerCase()}`;
+async function getCompanyDataRaw(companyName: string, apiKey: string): Promise<any> {
+    const cacheKey = `alphavantage_${companyName.toLowerCase()}`;
     
     try {
         // Check cache first
-        const cachedData = await apiCache.get<BloombergCompanyData>(cacheKey);
+        const cachedData = await apiCache.get<any>(cacheKey);
         if (cachedData) {
             return cachedData;
         }
 
-        await bloombergRateLimiter.waitForSlot();
-        
+        await alphaVantageRateLimiter.waitForSlot();
         const data = await retryWithBackoff(async () => {
-            const url = `https://api.bloomberg.com/v1/companies/${encodeURIComponent(companyName)}`;
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${BLOOMBERG_API_KEY.value()}`,
-                    'Accept': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                const error = new Error(`Bloomberg API returned ${response.status}`);
-                (error as any).status = response.status;
-                throw error;
-            }
+        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${companyName}&apikey=${apiKey}`;
+        const searchResponse = await fetch(searchUrl);
+            const searchData = await searchResponse.json() as AlphaVantageResponse;
 
-            const data = await response.json() as BloombergResponse;
-            
-            return {
-                ticker: data.ticker,
-                name: data.name,
-                exchange: data.exchange,
-                marketData: {
-                    price: data.price,
-                    volume: data.volume,
-                    marketCap: data.marketCap,
-                    peRatio: data.peRatio,
-                    eps: data.eps,
-                    dividend: data.dividend,
-                    yield: data.yield
-                },
-                financials: {
-                    revenue: data.revenue,
-                    netIncome: data.netIncome,
-                    assets: data.assets,
-                    liabilities: data.liabilities,
-                    equity: data.equity,
-                    cashFlow: data.cashFlow
-                },
-                ratings: {
-                    analystRating: data.analystRating,
-                    targetPrice: data.targetPrice,
-                    recommendations: {
-                        buy: data.recommendations.buy,
-                        hold: data.recommendations.hold,
-                        sell: data.recommendations.sell
-                    }
-                }
-            };
-        });
-
-        if (data) {
-            // Cache successful response
-            await apiCache.set(cacheKey, data);
+        if (!searchData.bestMatches || searchData.bestMatches.length === 0) {
+                throw new Error('No company found');
         }
 
+            const symbol = searchData.bestMatches[0]?.symbol;
+            
+            await alphaVantageRateLimiter.waitForSlot();
+        const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`;
+        const overviewResponse = await fetch(overviewUrl);
+            const overview = await overviewResponse.json() as OverviewResponse;
+            
+            return overview;
+        });
+        
+        // Cache successful response
+        if (data) {
+            await apiCache.set(cacheKey, data);
+        }
+        
         return data;
     } catch (error) {
-        console.error("Error fetching Bloomberg data:", error);
-        return null;
+        console.error("Error fetching company data:", error);
+        return {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            fallbackData: {}
+        };
     }
 }
 
-// Add back the interfaces
-interface YahooFinanceQuote {
-    shortName: string;
-    longName: string;
-    symbol: string;
-    exchange: string;
-    currency: string;
-    marketCap: number;
-    marketCapFormat: string;
-    enterpriseValue: number;
-    totalRevenue: number;
-    revenueGrowth: number;
-    grossMargins: number;
-    operatingMargins: number;
-    profitMargins: number;
-    ebitda: number;
-    trailingPE: number;
-    forwardPE: number;
-    pegRatio: number;
-    beta: number;
-    priceToBook: number;
-    dividendYield: number;
-    payoutRatio: number;
-    sector: string;
-    industry: string;
-    fullTimeEmployees: number;
-    country: string;
-    website: string;
-    longBusinessSummary: string;
-}
-
-interface YahooSearchResponse {
-    quotes: Array<{
-        symbol: string;
-        longname?: string;
-        shortname?: string;
-        exchDisp?: string;
-        typeDisp?: string;
-    }>;
-}
-
-interface YahooQuoteResponse {
-    quoteSummary: {
-        result: Array<{
-            summaryProfile?: {
-                shortName?: string;
-                longName?: string;
-                exchange?: string;
-                sector?: string;
-                industry?: string;
-                fullTimeEmployees?: number;
-                country?: string;
-                website?: string;
-                longBusinessSummary?: string;
-            };
-            summaryDetail?: {
-                currency?: string;
-                trailingPE?: { raw?: number };
-                forwardPE?: { raw?: number };
-                dividendYield?: { raw?: number };
-                payoutRatio?: { raw?: number };
-            };
-            financialData?: {
-                marketCap?: { raw?: number; fmt?: string };
-                totalRevenue?: { raw?: number };
-                revenueGrowth?: { raw?: number };
-                grossMargins?: { raw?: number };
-                operatingMargins?: { raw?: number };
-                profitMargins?: { raw?: number };
-                ebitda?: { raw?: number };
-            };
-            defaultKeyStatistics?: {
-                enterpriseValue?: { raw?: number };
-                pegRatio?: { raw?: number };
-                beta?: { raw?: number };
-                priceToBook?: { raw?: number };
-            };
-        }>;
-        error?: any;
-    };
-}
-
-// Update BloombergCompanyData interface to include USD conversions
-interface BloombergCompanyData {
-    ticker: string;
-    name: string;
-    exchange: string;
-    marketData: {
-        price: number;
-        volume: number;
-        marketCap: number;
-        peRatio: number;
-        eps: number;
-        dividend: number;
-        yield: number;
-        currency?: string;
-    };
-    financials: {
-        revenue: number;
-        netIncome: number;
-        assets: number;
-        liabilities: number;
-        equity: number;
-        cashFlow: number;
-    };
-    financialsUSD?: { [key: string]: number };
-    ratings: {
-        analystRating: string;
-        targetPrice: number;
-        recommendations: {
-            buy: number;
-            hold: number;
-            sell: number;
-        };
-    };
-}
-
-interface BloombergResponse {
-    ticker: string;
-    name: string;
-    exchange: string;
-    price: number;
-    volume: number;
-    marketCap: number;
-    peRatio: number;
-    eps: number;
-    dividend: number;
-    yield: number;
-    revenue: number;
-    netIncome: number;
-    assets: number;
-    liabilities: number;
-    equity: number;
-    cashFlow: number;
-    analystRating: string;
-    targetPrice: number;
-    recommendations: {
-        buy: number;
-        hold: number;
-        sell: number;
-    };
-}
-
-// Add back the missing functions
-async function getNewsData(companyName: string): Promise<NewsResponse | null> {
+// Enhanced news data function
+async function getNewsData(companyName: string, apiKey: string): Promise<any> {
+    const cacheKey = `news_${companyName.toLowerCase()}`;
+    
     try {
-        const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(companyName)}&sortBy=relevancy&apiKey=${NEWS_API_KEY.value()}`;
+        // Check cache first
+        const cachedData = await apiCache.get<any>(cacheKey);
+        if (cachedData) {
+            return cachedData;
+        }
+        
+        const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(companyName)}&sortBy=relevancy&pageSize=15&apiKey=${apiKey}`;
         const response = await fetch(newsUrl);
+        
+        if (!response.ok) {
+            throw new Error(`News API returned ${response.status}`);
+        }
+        
         const data = await response.json() as NewsResponse;
         
+        // Cache successful response (for a shorter time as news is time-sensitive)
         if (data && Array.isArray(data.articles)) {
+            await apiCache.set(cacheKey, data, 1800000); // 30 minutes
             return data;
         }
         
@@ -821,488 +371,502 @@ async function getNewsData(companyName: string): Promise<NewsResponse | null> {
     }
 }
 
-async function getSECFilings(companyName: string): Promise<SECFilingResponse | null> {
+// Enhanced SEC filings function
+async function getSECFilings(companyName: string, apiKey: string): Promise<any> {
+    const cacheKey = `sec_${companyName.toLowerCase()}`;
+    
     try {
-        const searchResponse = await fetch(`https://data.sec.gov/submissions/search-index.json`);
-        const searchData = await searchResponse.json() as { companies: SECCompanyInfo[] };
-        
-        const company = searchData.companies.find(c => 
-            c.name.toLowerCase().includes(companyName.toLowerCase()) ||
-            c.tickers.some(t => t.toLowerCase() === companyName.toLowerCase())
-        );
-
-        if (!company) {
-            console.error(`No SEC data found for company: ${companyName}`);
-            return null;
+        // Check cache first
+        const cachedData = await apiCache.get<any>(cacheKey);
+        if (cachedData) {
+            return cachedData;
         }
-
-        const filingsUrl = `https://data.sec.gov/submissions/CIK${company.cik.padStart(10, '0')}.json`;
-        const filingsResponse = await fetch(filingsUrl, {
-            headers: {
-                'User-Agent': 'Aidiligence/1.0',
-                'Accept-Encoding': 'gzip, deflate',
-                'Host': 'data.sec.gov'
-            }
-        });
-
-        if (!filingsResponse.ok) {
-            throw new Error(`SEC API returned ${filingsResponse.status}: ${filingsResponse.statusText}`);
-        }
-
-        const filingsData = await filingsResponse.json() as { filings: SECFilingData };
         
-        return {
-            filings: filingsData.filings.recent
-                .filter(filing => ['10-K', '10-Q', '8-K', '20-F', '6-K'].includes(filing.form))
-                .slice(0, 5)
-                .map(filing => ({
-                    type: filing.form,
-                    filingDate: filing.filingDate,
-                    description: `${filing.form} - ${filing.description || 'Periodic Report'}`,
-                    url: `https://www.sec.gov/Archives/edgar/data/${company.cik}/${filing.accessionNumber}`
-                }))
+        const url = `https://api.sec-api.io/filings?company=${encodeURIComponent(companyName)}&token=${apiKey}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`SEC API returned ${response.status}`);
+        }
+        
+        const data = await response.json() as SECApiResponse;
+        
+        const result = {
+            filings: data.filings.map(filing => ({
+                type: filing.formType,
+                filingDate: filing.filedAt,
+                description: filing.description || '',
+                url: filing.linkToFilingDetails
+            }))
         };
+        
+        // Cache successful response
+        await apiCache.set(cacheKey, result);
+        return result;
     } catch (error) {
         console.error("Error fetching SEC filings:", error);
         return null;
     }
 }
 
-// Add LinkedIn interfaces
-interface LinkedInCompanyData {
-    id: string;
-    name: string;
-    description: string;
-    industry: string;
-    specialties: string[];
-    website: string;
-    employeeCount: number;
-    headquarters: {
-        country: string;
-        city: string;
-    };
-    founded: string;
-    followers: number;
-    insights: {
-        totalEmployees: number;
-        employeeGrowth: number;
-        jobOpenings: number;
-    };
-}
-
-interface LinkedInResponse {
-    elements: Array<{
-        id: string;
-        localizedName: string;
-        localizedDescription: string;
-        localizedIndustry: string;
-        specialties: { values: string[] };
-        websiteUrl: string;
-        staffCount: number;
-        address: {
-            country: string;
-            city: string;
+// Function to parse AI response into structured format
+function parseAIResponse(text: string): DueDiligenceResponse {
+    try {
+        // Try to parse as JSON first in case the AI returns proper JSON
+        try {
+            const jsonData = JSON.parse(text);
+            return jsonData as DueDiligenceResponse;
+        } catch (e) {
+            // Not valid JSON, parse as text
+        }
+        
+        // Default empty report structure
+        const report: DueDiligenceResponse = {
+            companyName: "",
+            timestamp: new Date().toISOString(),
+            executiveSummary: {
+                overview: "",
+                keyFindings: [],
+                riskRating: "Medium",
+                recommendation: ""
+            },
+            financialAnalysis: {
+                metrics: {},
+                trends: [],
+                strengths: [],
+                weaknesses: []
+            },
+            marketAnalysis: {
+                position: "",
+                competitors: [],
+                marketShare: "",
+                swot: {
+                    strengths: [],
+                    weaknesses: [],
+                    opportunities: [],
+                    threats: []
+                }
+            },
+            riskAssessment: {
+                financial: [],
+                operational: [],
+                market: [],
+                regulatory: [],
+                esg: []
+            },
+            recentDevelopments: {
+                news: [],
+                filings: [],
+                management: [],
+                strategic: []
+            }
         };
-        founded: { year: string };
-    }>;
-}
-
-interface LinkedInInsightsResponse {
-    totalFollowerCount: number;
-    employeeGrowthRate: number;
-    jobOpenings: number;
-}
-
-// Add Crunchbase interfaces
-interface CrunchbaseCompanyData {
-    uuid: string;
-    name: string;
-    description: string;
-    primaryRole: string;
-    foundedOn: string;
-    operatingStatus: string;
-    categories: string[];
-    funding: {
-        totalRounds: number;
-        totalRaised: number;
-        lastRound: {
-            type: string;
-            amount: number;
-            date: string;
-        } | null;
-    };
-    investors: Array<{
-        name: string;
-        type: string;
-        investmentCount: number;
-    }>;
-    acquisitions: Array<{
-        acquiredBy: string;
-        price: number;
-        date: string;
-    }>;
-    ipos: Array<{
-        date: string;
-        valuationAtIpo: number;
-        stockSymbol: string;
-    }>;
-}
-
-interface CrunchbaseResponse {
-    data: {
-        uuid: string;
-        name: string;
-        description: string;
-        primary_role: string;
-        founded_on: string;
-        operating_status: string;
-        categories: Array<{ name: string }>;
-        funding_rounds: Array<{
-            funding_type: string;
-            money_raised: { value: number };
-            announced_on: string;
-        }>;
-        funding_total: { value: number };
-        investors: Array<{
-            name: string;
-            type: string;
-            investment_count: number;
-        }>;
-        acquisitions: Array<{
-            acquirer: { name: string };
-            price: { value: number };
-            announced_on: string;
-        }>;
-        ipos: Array<{
-            went_public_on: string;
-            valuation: { value: number };
-            stock_symbol: string;
-        }>;
-    };
-}
-
-// Update type annotations in functions
-async function getCrunchbaseData(companyName: string): Promise<CrunchbaseCompanyData | null> {
-    const cacheKey = `crunchbase_${companyName.toLowerCase()}`;
-    
-    try {
-        const cachedData = await apiCache.get<CrunchbaseCompanyData>(cacheKey);
-        if (cachedData) {
-            return cachedData;
-        }
-
-        await crunchbaseRateLimiter.waitForSlot();
         
-        const data = await retryWithBackoff(async () => {
-            const url = `https://api.crunchbase.com/v3.1/organizations/${encodeURIComponent(companyName)}?user_key=${CRUNCHBASE_API_KEY.value()}`;
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                const error = new Error(`Crunchbase API returned ${response.status}`);
-                (error as any).status = response.status;
-                throw error;
-            }
-
-            const { data } = await response.json() as CrunchbaseResponse;
-
-            if (!data) {
-                return null;
-            }
-
-            return {
-                uuid: data.uuid,
-                name: data.name,
-                description: data.description,
-                primaryRole: data.primary_role,
-                foundedOn: data.founded_on,
-                operatingStatus: data.operating_status,
-                categories: data.categories?.map((c: { name: string }) => c.name) || [],
-                funding: {
-                    totalRounds: data.funding_rounds?.length || 0,
-                    totalRaised: data.funding_total?.value || 0,
-                    lastRound: data.funding_rounds?.[0] ? {
-                        type: data.funding_rounds[0].funding_type,
-                        amount: data.funding_rounds[0].money_raised?.value || 0,
-                        date: data.funding_rounds[0].announced_on
-                    } : null
-                },
-                investors: (data.investors || []).map(investor => ({
-                    name: investor.name,
-                    type: investor.type,
-                    investmentCount: investor.investment_count
-                })),
-                acquisitions: (data.acquisitions || []).map(acq => ({
-                    acquiredBy: acq.acquirer?.name,
-                    price: acq.price?.value || 0,
-                    date: acq.announced_on
-                })),
-                ipos: (data.ipos || []).map(ipo => ({
-                    date: ipo.went_public_on,
-                    valuationAtIpo: ipo.valuation?.value || 0,
-                    stockSymbol: ipo.stock_symbol
-                }))
-            };
-        });
-
-        if (data) {
-            await apiCache.set(cacheKey, data);
-        }
-
-        return data;
-    } catch (error) {
-        console.error("Error fetching Crunchbase data:", error);
-        return null;
-    }
-}
-
-// Add back LinkedIn data fetching function
-async function getLinkedInData(companyName: string): Promise<LinkedInCompanyData | null> {
-    const cacheKey = `linkedin_${companyName.toLowerCase()}`;
-    
-    try {
-        const cachedData = await apiCache.get<LinkedInCompanyData>(cacheKey);
-        if (cachedData) {
-            return cachedData;
-        }
-
-        await linkedInRateLimiter.waitForSlot();
+        // Parse sections from text
+        const sections: Record<string, string> = {};
         
-        const data = await retryWithBackoff(async () => {
-            const url = `https://api.linkedin.com/v2/organizations?q=vanityName&vanityName=${encodeURIComponent(companyName)}`;
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${LINKEDIN_API_KEY.value()}`,
-                    'X-Restli-Protocol-Version': '2.0.0',
-                    'Accept': 'application/json'
-                }
+        // Extract major sections
+        const sectionRegex = /\n\s*(\d+\.\s*[A-Z][A-Za-z\s&]+)\s*\n/g;
+        let match;
+        
+        const sectionMatches = [];
+        while ((match = sectionRegex.exec(text)) !== null) {
+            sectionMatches.push({
+                title: match[1].trim(),
+                start: match.index,
+                end: text.length // Will be updated for all but the last one
             });
-            
-            if (!response.ok) {
-                const error = new Error(`LinkedIn API returned ${response.status}`);
-                (error as any).status = response.status;
-                throw error;
-            }
-
-            const data = await response.json() as LinkedInResponse;
-            const company = data.elements?.[0];
-
-            if (!company) {
-                return null;
-            }
-
-            const insightsUrl = `https://api.linkedin.com/v2/organizationalEntityFollowerStatistics?q=organizationalEntity&organizationalEntity=${company.id}`;
-            const insightsResponse = await fetch(insightsUrl, {
-                headers: {
-                    'Authorization': `Bearer ${LINKEDIN_API_KEY.value()}`,
-                    'X-Restli-Protocol-Version': '2.0.0'
-                }
-            });
-            
-            const insights = await insightsResponse.json() as LinkedInInsightsResponse;
-
-            return {
-                id: company.id,
-                name: company.localizedName,
-                description: company.localizedDescription,
-                industry: company.localizedIndustry,
-                specialties: company.specialties?.values || [],
-                website: company.websiteUrl,
-                employeeCount: company.staffCount,
-                headquarters: {
-                    country: company.address?.country,
-                    city: company.address?.city
-                },
-                founded: company.founded?.year,
-                followers: insights.totalFollowerCount,
-                insights: {
-                    totalEmployees: company.staffCount,
-                    employeeGrowth: insights.employeeGrowthRate || 0,
-                    jobOpenings: insights.jobOpenings || 0
-                }
-            };
-        });
-
-        if (data) {
-            await apiCache.set(cacheKey, data);
         }
-
-        return data;
+        
+        // Set proper end positions
+        for (let i = 0; i < sectionMatches.length - 1; i++) {
+            sectionMatches[i].end = sectionMatches[i + 1].start;
+        }
+        
+        // Extract section content
+        sectionMatches.forEach(section => {
+            const content = text.substring(section.start, section.end).replace(section.title, '').trim();
+            sections[section.title] = content;
+        });
+        
+        // Parse Executive Summary
+        if (sections["1. Executive Summary"]) {
+            report.executiveSummary.overview = sections["1. Executive Summary"]
+                .split('\n\n')[0]
+                .replace(/^[^a-zA-Z]+/, '')
+                .trim();
+            
+            // Extract key findings
+            const findingsMatch = sections["1. Executive Summary"].match(/Key findings[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            if (findingsMatch) {
+                report.executiveSummary.keyFindings = findingsMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Extract risk rating
+            const riskMatch = sections["1. Executive Summary"].match(/Risk rating[^:]*:\s*(Low|Medium|High)/i);
+            if (riskMatch) {
+                report.executiveSummary.riskRating = riskMatch[1] as any;
+            }
+            
+            // Extract recommendation
+            const recoMatch = sections["1. Executive Summary"].match(/Recommendation[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|\Z)/i);
+            if (recoMatch) {
+                report.executiveSummary.recommendation = recoMatch[1].trim();
+            }
+        }
+        
+        // Parse Financial Analysis
+        if (sections["2. Financial Analysis"]) {
+            const content = sections["2. Financial Analysis"];
+            
+            // Extract metrics
+            const metricsMatch = content.match(/Key (financial )?metrics[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            if (metricsMatch) {
+                const metricsText = metricsMatch[2];
+                const metricItems = metricsText.match(/[•-]?\s*([^:]+):\s*([^•\n]+)/g);
+                
+                if (metricItems) {
+                    metricItems.forEach(item => {
+                        const [key, value] = item.split(/:\s*/);
+                        if (key && value) {
+                            report.financialAnalysis.metrics[key.replace(/^[•-]\s*/, '').trim()] = value.trim();
+                        }
+                    });
+                }
+            }
+            
+            // Extract trends
+            const trendsMatch = content.match(/(?:Revenue|Profitability|Financial)\s+trends[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            if (trendsMatch) {
+                report.financialAnalysis.trends = trendsMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Extract strengths
+            const strengthsMatch = content.match(/(?:Financial )?[Ss]trengths[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|Weaknesses)/i);
+            if (strengthsMatch) {
+                report.financialAnalysis.strengths = strengthsMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Extract weaknesses
+            const weaknessesMatch = content.match(/(?:Financial )?[Ww]eaknesses[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            if (weaknessesMatch) {
+                report.financialAnalysis.weaknesses = weaknessesMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+        }
+        
+        // Parse Market Analysis
+        if (sections["3. Market Position & Competitive Analysis"] || sections["3. Market Analysis"]) {
+            const content = sections["3. Market Position & Competitive Analysis"] || sections["3. Market Analysis"];
+            
+            // Extract market position
+            report.marketAnalysis.position = content.split('\n\n')[0].trim();
+            
+            // Extract competitors
+            const competitorsMatch = content.match(/[Cc]ompetitive landscape[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i) || 
+                                     content.match(/[Cc]ompetitors[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            if (competitorsMatch) {
+                report.marketAnalysis.competitors = competitorsMatch[1]
+                    .split(/\n[•-]\s*|,\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Extract SWOT
+            // Strengths
+            const swotStrengthsMatch = content.match(/SWOT[^:]*strengths[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Ww]eaknesses)/i) || 
+                                      content.match(/[Ss]trengths[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Ww]eaknesses)/i);
+            if (swotStrengthsMatch) {
+                report.marketAnalysis.swot.strengths = swotStrengthsMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Weaknesses
+            const swotWeaknessesMatch = content.match(/SWOT[^:]*weaknesses[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Oo]pportunities)/i) || 
+                                       content.match(/[Ww]eaknesses[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Oo]pportunities)/i);
+            if (swotWeaknessesMatch) {
+                report.marketAnalysis.swot.weaknesses = swotWeaknessesMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Opportunities
+            const swotOpportunitiesMatch = content.match(/SWOT[^:]*opportunities[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Tt]hreats)/i) || 
+                                          content.match(/[Oo]pportunities[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Tt]hreats)/i);
+            if (swotOpportunitiesMatch) {
+                report.marketAnalysis.swot.opportunities = swotOpportunitiesMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Threats
+            const swotThreatsMatch = content.match(/SWOT[^:]*threats[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i) || 
+                                    content.match(/[Tt]hreats[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            if (swotThreatsMatch) {
+                report.marketAnalysis.swot.threats = swotThreatsMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+        }
+        
+        // Parse Risk Assessment
+        if (sections["4. Risk Assessment"]) {
+            const content = sections["4. Risk Assessment"];
+            
+            // Financial risks
+            const financialRisksMatch = content.match(/[Ff]inancial risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Oo]perational)/i);
+            if (financialRisksMatch) {
+                report.riskAssessment.financial = financialRisksMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Operational risks
+            const operationalRisksMatch = content.match(/[Oo]perational risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Mm]arket)/i);
+            if (operationalRisksMatch) {
+                report.riskAssessment.operational = operationalRisksMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Market risks
+            const marketRisksMatch = content.match(/[Mm]arket risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Rr]egulatory)/i);
+            if (marketRisksMatch) {
+                report.riskAssessment.market = marketRisksMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // Regulatory risks
+            const regulatoryRisksMatch = content.match(/[Rr]egulatory risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|ESG)/i);
+            if (regulatoryRisksMatch) {
+                report.riskAssessment.regulatory = regulatoryRisksMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+            
+            // ESG considerations
+            const esgMatch = content.match(/ESG considerations[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|\Z)/i);
+            if (esgMatch) {
+                report.riskAssessment.esg = esgMatch[1]
+                    .split(/\n[•-]\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+        }
+        
+        return report;
     } catch (error) {
-        console.error("Error fetching LinkedIn data:", error);
-        return null;
+        console.error("Error parsing AI response:", error);
+        return {
+            companyName: "",
+            timestamp: new Date().toISOString(),
+            executiveSummary: {
+                overview: "Error generating report. Please try again.",
+                keyFindings: [],
+                riskRating: "Medium",
+                recommendation: ""
+            },
+            financialAnalysis: {
+                metrics: {},
+                trends: [],
+                strengths: [],
+                weaknesses: []
+            },
+            marketAnalysis: {
+                position: "",
+                competitors: [],
+                marketShare: "",
+                swot: {
+                    strengths: [],
+                    weaknesses: [],
+                    opportunities: [],
+                    threats: []
+                }
+            },
+            riskAssessment: {
+                financial: [],
+                operational: [],
+                market: [],
+                regulatory: [],
+                esg: []
+            },
+            recentDevelopments: {
+                news: [],
+                filings: [],
+                management: [],
+                strategic: []
+            }
+        };
     }
 }
 
 // Update the generateDueDiligence function
-export const generateDueDiligence = onRequest({ 
+export const generateDueDiligence = onRequest({
     memory: "1GiB",
     timeoutSeconds: 300,
     minInstances: 0,
     maxInstances: 10,
-    invoker: "public"
+    invoker: "public",
+    secrets: [GEMINI_API_KEY, ALPHA_VANTAGE_API_KEY, NEWS_API_KEY, SEC_API_KEY]
 }, async (request, response) => {
     return corsHandler(request, response, async () => {
         try {
             const data = request.body;
-            if (!data.company) {
+            if (!data.companyName) {
                 response.status(400).json({ error: "Company name is required" });
                 return;
             }
 
-            const ai = initializeGenAI();
-            if (!ai) {
-                response.status(500).json({ error: "Gemini AI is not configured" });
-                return;
+            // Get API keys from secrets
+            const geminiKey = GEMINI_API_KEY.value();
+            const alphaVantageKey = ALPHA_VANTAGE_API_KEY.value();
+            const newsKey = NEWS_API_KEY.value();
+            const secKey = SEC_API_KEY.value();
+
+            if (!geminiKey || !alphaVantageKey || !newsKey || !secKey) {
+                throw new Error('Missing required API keys');
             }
 
-            // Rest of the generateDueDiligence implementation...
-            const [
-                _companyData,
-                newsData,
-                secData,
-                yahooData,
-                linkedinData,
-                crunchbaseData,
-                bloombergData
-            ] = await Promise.all([
-                getCompanyData(data.company),
-                getNewsData(data.company),
-                getSECFilings(data.company),
-                getYahooFinanceData(data.company),
-                getLinkedInData(data.company),
-                getCrunchbaseData(data.company),
-                getBloombergData(data.company)
+            const ai = initializeGenAI(geminiKey);
+            console.log('Initialized Gemini AI for company:', data.companyName);
+
+            // Fetch data from all available sources
+            const [companyData, newsData, secFilings] = await Promise.all([
+                getCompanyDataRaw(data.companyName, alphaVantageKey),
+                getNewsData(data.companyName, newsKey),
+                getSECFilings(data.companyName, secKey)
             ]);
 
-            // Construct a more sophisticated analysis prompt
-            const prompt = `Generate a professional, data-driven due diligence report for ${data.company}.
+            console.log('Fetched all data sources successfully');
 
-REPORT STRUCTURE AND REQUIREMENTS:
+            // Prepare options from request or use defaults
+            const reportFormat = (data.options || {
+                format: {
+                    type: 'detailed',
+                    includeCharts: true,
+                }
+            }).format;
 
-1. Executive Summary (2-3 paragraphs)
-- Company snapshot with key metrics
-- Critical findings and investment thesis
-- Major risk factors and opportunities
-- Current market position and competitive advantages
+            console.log('Using report format:', reportFormat.type);
 
-2. Financial Analysis (Detailed with metrics)
-${yahooData ? `
-Key Financial Metrics:
-- Market Cap: ${yahooData.marketCapFormat}
-- Revenue Growth: ${(yahooData.revenueGrowth * 100).toFixed(2)}%
-- Operating Margins: ${(yahooData.operatingMargins * 100).toFixed(2)}%
-- EBITDA: ${yahooData.ebitda}
-- P/E Ratio: ${yahooData.trailingPE}
-- Forward P/E: ${yahooData.forwardPE}
-- PEG Ratio: ${yahooData.pegRatio}
-- Beta: ${yahooData.beta}` : 'Financial data not available'}
+            // Enhanced prompt with more structure and formatting instructions
+            const prompt = `Generate a comprehensive professional due diligence report for ${data.companyName} in a structured format. 
+            Use the following data sources to inform your analysis:
 
-${bloombergData ? `
-Bloomberg Analysis:
-- Analyst Rating: ${bloombergData.ratings.analystRating}
-- Target Price: ${bloombergData.ratings.targetPrice}
-- Buy/Hold/Sell Ratio: ${bloombergData.ratings.recommendations.buy}/${bloombergData.ratings.recommendations.hold}/${bloombergData.ratings.recommendations.sell}
-- Market Data: ${JSON.stringify(bloombergData.marketData, null, 2)}
-- Financial Metrics: ${JSON.stringify(bloombergData.financials, null, 2)}` : ''}
+            Financial Data:
+            ${JSON.stringify(companyData)}
 
-3. Market Position & Competitive Analysis
-${linkedinData ? `
-Company Profile (LinkedIn):
-- Industry: ${linkedinData.industry}
-- Employee Count: ${linkedinData.employeeCount}
-- Employee Growth: ${linkedinData.insights.employeeGrowth}%
-- Job Openings: ${linkedinData.insights.jobOpenings}
-- Specialties: ${linkedinData.specialties?.join(', ')}` : ''}
+            Recent News:
+            ${JSON.stringify(newsData)}
 
-4. Investment History & Funding
-${crunchbaseData ? `
-Crunchbase Data:
-- Founded: ${crunchbaseData.foundedOn}
-- Total Funding: ${crunchbaseData.funding.totalRaised}
-- Latest Round: ${crunchbaseData.funding.lastRound?.type} (${crunchbaseData.funding.lastRound?.amount})
-- Key Investors: ${crunchbaseData.investors.map(i => i.name).join(', ')}
-- Acquisitions: ${crunchbaseData.acquisitions.length}
-- IPO Status: ${crunchbaseData.ipos.length > 0 ? 'Public' : 'Private'}` : ''}
+            SEC Filings:
+            ${JSON.stringify(secFilings)}
 
-5. Recent Developments & News
-${newsData?.articles ? newsData.articles.slice(0, 5).map(article => 
-    `- ${article.title} (${article.source.name}, ${new Date(article.publishedAt).toLocaleDateString()})`
-).join('\n') : 'No recent news available'}
+            Please structure the report with the following numbered sections:
 
-6. Regulatory Compliance & SEC Filings
-${secData?.filings ? secData.filings.map(filing => 
-    `- ${filing.type} (${filing.filingDate}): ${filing.description}`
-).join('\n') : 'No SEC filings available'}
+            1. Executive Summary
+            - Brief company overview (2-3 paragraphs)
+            - Key findings (5-7 bullet points)
+            - Risk rating (Low/Medium/High) with justification
+            - Recommendation summary (1-2 paragraphs)
 
-ANALYSIS REQUIREMENTS:
+            2. Financial Analysis
+            - Key financial metrics (list the most important with values)
+            - Revenue and profitability trends (3-5 bullet points)
+            - Balance sheet strength assessment
+            - Cash flow analysis summary
+            - Financial strengths (3-5 bullet points)
+            - Financial weaknesses (3-5 bullet points)
 
-1. Financial Health Assessment
-- Analyze key financial ratios and trends
-- Compare metrics against industry standards
-- Evaluate capital structure and efficiency
-- Assess liquidity and cash flow management
-- Highlight any red flags or concerns
+            3. Market Position & Competitive Analysis
+            - Industry overview and market size
+            - Competitive landscape (list main competitors)
+            - Market share and positioning assessment
+            - SWOT analysis with clear sections for:
+              * Strengths (4-6 bullet points)
+              * Weaknesses (4-6 bullet points)
+              * Opportunities (4-6 bullet points)
+              * Threats (4-6 bullet points)
 
-2. Market Position Evaluation
-- Analyze market share and competitive position
-- Evaluate brand strength and reputation
-- Assess product/service differentiation
-- Analyze pricing power and market influence
-- Identify key competitive advantages
+            4. Risk Assessment
+            - Financial risks (3-5 bullet points)
+            - Operational risks (3-5 bullet points)
+            - Market risks (3-5 bullet points)
+            - Regulatory risks (3-5 bullet points)
+            - ESG considerations (3-5 bullet points)
 
-3. Risk Assessment
-- Identify and analyze operational risks
-- Evaluate market and competitive risks
-- Assess regulatory and compliance risks
-- Analyze financial and liquidity risks
-- Consider technological and disruption risks
-- Evaluate ESG risks and opportunities
+            5. Recent Developments
+            - Summarize key news and events (2-3 paragraphs)
+            - Management changes (if applicable)
+            - Strategic initiatives (3-5 bullet points)
+            - Market sentiment analysis
 
-4. Growth Analysis
-- Evaluate organic growth opportunities
-- Assess M&A potential and strategy
-- Analyze market expansion possibilities
-- Evaluate product development pipeline
-- Consider technological innovation potential
+            Format Requirements:
+            - Use precise, data-driven language
+            - Include specific metrics and figures where available
+            - Use clear section headings and subheadings
+            - Present information in concise bullet points where appropriate
+            - Provide balanced analysis with both positive and negative insights
+            - Use professional financial terminology
 
-5. Management & Governance
-- Evaluate management team experience
-- Assess corporate governance structure
-- Analyze decision-making processes
-- Review compensation and incentives
-- Evaluate succession planning
+            The report should be suitable for professional investors and investment advisors to make informed decisions.`;
 
-6. Investment Considerations
-- Provide detailed valuation analysis
-- Compare against industry peers
-- Identify key investment risks
-- Evaluate potential returns
-- Consider exit opportunities
-
-FORMAT REQUIREMENTS:
-- Use professional, precise language
-- Include specific data points and metrics
-- Provide evidence-based conclusions
-- Use bullet points for clarity
-- Include source citations
-- Maintain objectivity
-- Highlight both positives and negatives
-- Provide actionable insights
-
-The report should be thorough, data-driven, and actionable for professional investors. Focus on quantitative analysis where data is available and qualitative analysis where needed.`;
-
-            // Generate the analysis using the AI model
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            console.log('Generating report with Gemini AI...');
+            const model = ai.getGenerativeModel({ model: MODEL_NAME });
             const result = await model.generateContent(prompt);
             const text = result.response.text();
-            response.json({ data: text });
-        } catch (error) {
+            console.log('Report generated successfully');
+
+            // Parse the AI's text response into a structured format
+            const structuredReport = parseAIResponse(text);
+
+            // Add company name and timestamp
+            structuredReport.companyName = data.companyName;
+            structuredReport.timestamp = new Date().toISOString();
+
+            // Save report to database for history/audit
+            try {
+                const db = getFirestore();
+                const reportData = {
+                    companyName: data.companyName,
+                    timestamp: new Date().toISOString(),
+                    report: structuredReport,
+                    userId: request.headers.authorization ? 'authenticated' : 'anonymous',
+                    rawResponse: text.substring(0, 1000) // Store beginning for debugging
+                };
+                await db.collection('reportHistory').add(reportData);
+            }
+            catch (dbError) {
+                console.error("Error saving report to database:", dbError);
+                // Don't fail the request if DB save fails
+            }
+
+            response.json({ data: structuredReport });
+        }
+        catch (error) {
             console.error("Error in generateDueDiligence:", error);
-            response.status(500).json({ 
+            response.status(500).json({
                 error: "Internal server error",
                 details: error instanceof Error ? error.message : String(error)
             });
@@ -1310,12 +874,14 @@ The report should be thorough, data-driven, and actionable for professional inve
     });
 });
 
-export const generateText = onRequest({ 
+// Update the generateText function
+export const generateText = onRequest({
     memory: "1GiB",
     timeoutSeconds: 300,
     minInstances: 0,
     maxInstances: 10,
-    invoker: "public"
+    invoker: "public",
+    secrets: [GEMINI_API_KEY]
 }, async (request, response) => {
     return corsHandler(request, response, async () => {
         try {
@@ -1325,22 +891,52 @@ export const generateText = onRequest({
                 return;
             }
 
-            if (!GEMINI_API_KEY.value()) {
-                response.status(500).json({ error: "Gemini API key is not configured" });
-                return;
+            const geminiKey = GEMINI_API_KEY.value();
+            if (!geminiKey) {
+                throw new Error('Missing Gemini API key');
             }
 
-            console.log('Generating text for prompt:', data.prompt);
-            const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-            const result = await model.generateContent(data.prompt);
+            const ai = initializeGenAI(geminiKey);
+
+            // Enhanced model configuration
+            const modelConfig = {
+                model: MODEL_NAME,
+                generationConfig: {
+                    temperature: 0.7,
+                    topK: 40,
+                    topP: 0.95,
+                    maxOutputTokens: 2048,
+                }
+            };
+
+            console.log('Generating text with model:', MODEL_NAME);
+            const model = ai.getGenerativeModel(modelConfig);
+
+            // Add retry logic for API calls
+            const result = await retryWithBackoff(async () => {
+                return await model.generateContent(data.prompt);
+            });
+
             const text = result.response.text();
             console.log('Generated text successfully');
-            response.json({ data: text });
-        } catch (error) {
+
+            // Add response validation
+            if (!text || text.trim().length === 0) {
+                throw new Error('Empty response from model');
+            }
+
+            response.json({
+                data: text,
+                model: MODEL_NAME,
+                timestamp: new Date().toISOString()
+            });
+        }
+        catch (error) {
             console.error("Error in generateText:", error);
-            response.status(500).json({ 
+            response.status(500).json({
                 error: "Internal server error",
-                details: error instanceof Error ? error.message : String(error)
+                details: error instanceof Error ? error.message : String(error),
+                timestamp: new Date().toISOString()
             });
         }
     });
