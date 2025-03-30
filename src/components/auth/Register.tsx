@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
-import app, { auth } from '../../firebase';
+import { auth } from '../../firebase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,13 +13,12 @@ const Register = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const db = getFirestore(app);
+  const db = getFirestore();
 
   // Create test admin account on component mount
   useEffect(() => {
     const createTestAdmin = async () => {
       try {
-        const auth = getAuth(app);
         const testEmail = 'admin@aidiligence.pro';
         const testPassword = 'Admin123!@#';
         
@@ -58,7 +57,6 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const auth = getAuth(app);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
       // Set user role and trial info in Firestore

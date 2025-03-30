@@ -21,14 +21,12 @@ export const Navbar = () => {
     const navigate = useNavigate();
 
     const navItems = [
-        { label: 'Home', path: '/' },
         { label: 'Due Diligence', path: '/due-diligence' },
-        { label: 'MCP Report', path: '/mcp-report' },
-        { label: 'Blog Generator', path: '/blog-generator' },
         { label: 'File Manager', path: '/file-manager' },
         { label: 'Demo', path: '/demo' },
         { label: 'Pricing', path: '/pricing' },
         { label: 'About', path: '/about' },
+        { label: 'FAQ', path: '/faq' },
         { label: 'Contact', path: '/contact' },
         { label: 'Blog', path: '/blog' },
     ];
@@ -115,12 +113,6 @@ export const Navbar = () => {
                                         <Link to="/due-diligence" className="cursor-pointer flex w-full items-center">
                                             <FileText className="mr-2 h-4 w-4" />
                                             <span>Due Diligence</span>
-                                        </Link>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild>
-                                        <Link to="/mcp-report" className="cursor-pointer flex w-full items-center">
-                                            <FileText className="mr-2 h-4 w-4" />
-                                            <span>MCP Report</span>
                                         </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem asChild>

@@ -22,7 +22,7 @@ jobs:
         run: npm ci
         
       - name: Run tests
-        run: npm test
+        run: npx vitest run
         
       - name: Run type checking
         run: npm run type-check
@@ -52,25 +52,36 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: build
-          path: dist/
+          path: dist
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
     steps:
       - uses: actions/checkout@v3
       
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
       - name: Download build artifacts
         uses: actions/download-artifact@v3
         with:
           name: build
-          path: dist/
+          path: dist
           
       - name: Deploy to Firebase
-        uses: w9jds/firebase-action@master
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          args: deploy --only hosting
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          channelId: live
+          projectId: ai-diligence
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }} 
+          FIREBASE_CLI_PREVIEWS: hostingchannels

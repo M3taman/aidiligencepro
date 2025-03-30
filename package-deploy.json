@@ -1,0 +1,9 @@
+{
+  "name": "deploy-script",
+  "version": "1.0.0",
+  "description": "Script to deploy Firebase functions",
+  "type": "module",
+  "scripts": {
+    "deploy": "node deploy-functions.js"
+  }
+}

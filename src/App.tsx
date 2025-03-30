@@ -20,6 +20,7 @@ import { Helmet } from 'react-helmet-async';
 import { DueDiligencePage } from './pages/DueDiligencePage';
 import { Pricing } from './pages/Pricing';
 import { About } from './pages/About';
+import { FAQ } from './pages/FAQ';
 import Contact from './pages/Contact';
 import { Blog } from './pages/Blog';
 import Privacy from './pages/Privacy';
@@ -38,8 +39,6 @@ import ForgotPassword from '@/components/auth/ForgotPassword';
 import ReportsPage from '@/pages/ReportsPage';
 import ReportDetailPage from '@/pages/ReportDetailPage';
 import DemoPage from '@/pages/DemoPage';
-import MCPReportPage from '@/pages/mcp-report';
-import BlogGeneratorPage from '@/pages/BlogGeneratorPage';
 import FileManagerPage from '@/pages/file-manager';
 
 // Create a client
@@ -89,7 +88,7 @@ const Home = () => {
       </Helmet>
 
       <main className="bg-background text-foreground">
-        {/* Hero Section */}
+        {/* Hero Section with Due Diligence Report */}
         <section className="relative py-20 overflow-hidden bg-gradient-to-b from-primary/5 via-background to-background">
           <div className="container px-4 mx-auto">
             <div className="max-w-5xl mx-auto text-center mb-16">
@@ -98,6 +97,7 @@ const Home = () => {
               </h1>
               <p className="text-xl text-muted-foreground mb-8">
                 Generate comprehensive company analysis and due diligence reports instantly using advanced AI technology.
+                Sign up for a free 7-day trial and get 5 free reports.
               </p>
             </div>
 
@@ -161,6 +161,7 @@ const Root = () => {
                     <Route index element={<Home />} />
                     <Route path="pricing" element={<Pricing />} />
                     <Route path="about" element={<About />} />
+                    <Route path="faq" element={<FAQ />} />
                     <Route path="contact" element={<Contact />} />
                     <Route path="blog" element={<Blog />} />
                     <Route path="demo" element={<DemoPage />} />
@@ -170,7 +171,6 @@ const Root = () => {
                     <Route path="login" element={<Login />} />
                     <Route path="register" element={<Register />} />
                     <Route path="forgot-password" element={<ForgotPassword />} />
-                    <Route path="blog-generator" element={<BlogGeneratorPage />} />
                   </Route>
 
                   {/* Protected Routes */}
@@ -179,9 +179,9 @@ const Root = () => {
                     <Route path="profile" element={<Profile />} />
                     <Route path="settings" element={<Settings />} />
                     <Route path="due-diligence" element={<DueDiligencePage />} />
-                    <Route path="mcp-report" element={<MCPReportPage />} />
                     <Route path="reports" element={<ReportsPage />} />
                     <Route path="reports/:reportId" element={<ReportDetailPage />} />
+                    <Route path="demo" element={<DemoPage />} />
                     <Route path="file-manager" element={<FileManagerPage />} />
                   </Route>
                 </Routes>

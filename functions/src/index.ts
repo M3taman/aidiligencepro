@@ -292,62 +292,57 @@ interface DueDiligenceResponse {
 }
 
 // Update getCompanyData to include currency conversion
-async function getCompanyDataRaw(companyName: string, apiKey: string): Promise<any> {
-    const cacheKey = `alphavantage_${companyName.toLowerCase()}`;
-    
+async function getCompanyDataRaw(companyName: string, apiKey: string): Promise<OverviewResponse | AlphaVantageResponse> {
     try {
-        // Check cache first
-        const cachedData = await apiCache.get<any>(cacheKey);
-        if (cachedData) {
-            return cachedData;
-        }
-
         await alphaVantageRateLimiter.waitForSlot();
-        const data = await retryWithBackoff(async () => {
-        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${companyName}&apikey=${apiKey}`;
-        const searchResponse = await fetch(searchUrl);
-            const searchData = await searchResponse.json() as AlphaVantageResponse;
-
-        if (!searchData.bestMatches || searchData.bestMatches.length === 0) {
-                throw new Error('No company found');
-        }
-
-            const symbol = searchData.bestMatches[0]?.symbol;
-            
-            await alphaVantageRateLimiter.waitForSlot();
-        const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`;
-        const overviewResponse = await fetch(overviewUrl);
-            const overview = await overviewResponse.json() as OverviewResponse;
-            
-            return overview;
+        
+        // First try symbol search
+        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(companyName)}&apikey=${apiKey}`;
+        
+        const searchResponse = await retryWithBackoff<any>(async () => {
+            const response = await fetch(searchUrl);
+            if (!response.ok) {
+                throw new Error(`Alpha Vantage API error: ${response.status}`);
+            }
+            return await response.json();
         });
         
-        // Cache successful response
-        if (data) {
-            await apiCache.set(cacheKey, data);
+        // Check if we got valid search results
+        if (searchResponse?.bestMatches && Array.isArray(searchResponse.bestMatches) && searchResponse.bestMatches.length > 0) {
+            // The API returns properties with numbers in the name like '1. symbol'
+            const symbol = searchResponse.bestMatches[0]['1. symbol'] || '';
+            
+            if (symbol) {
+                // Now get company overview
+                await alphaVantageRateLimiter.waitForSlot();
+                const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`;
+                
+                const overviewResponse = await retryWithBackoff<any>(async () => {
+                    const response = await fetch(overviewUrl);
+                    if (!response.ok) {
+                        throw new Error(`Alpha Vantage API error: ${response.status}`);
+                    }
+                    return await response.json();
+                });
+                
+                // If we got a valid overview, return it
+                if (overviewResponse?.Symbol) {
+                    return overviewResponse as OverviewResponse;
+                }
+            }
         }
         
-        return data;
+        // If we couldn't get a valid overview, return the search response
+        return searchResponse as AlphaVantageResponse;
     } catch (error) {
-        console.error("Error fetching company data:", error);
-        return {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            fallbackData: {}
-        };
+        console.error('Error fetching company data:', error);
+        throw error;
     }
 }
 
 // Enhanced news data function
-async function getNewsData(companyName: string, apiKey: string): Promise<any> {
-    const cacheKey = `news_${companyName.toLowerCase()}`;
-    
+async function getNewsData(companyName: string, apiKey: string): Promise<NewsResponse | null> {
     try {
-        // Check cache first
-        const cachedData = await apiCache.get<any>(cacheKey);
-        if (cachedData) {
-            return cachedData;
-        }
-        
         const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(companyName)}&sortBy=relevancy&pageSize=15&apiKey=${apiKey}`;
         const response = await fetch(newsUrl);
         
@@ -359,7 +354,7 @@ async function getNewsData(companyName: string, apiKey: string): Promise<any> {
         
         // Cache successful response (for a shorter time as news is time-sensitive)
         if (data && Array.isArray(data.articles)) {
-            await apiCache.set(cacheKey, data, 1800000); // 30 minutes
+            await apiCache.set(`news_${companyName.toLowerCase()}`, data, 1800000); // 30 minutes
             return data;
         }
         
@@ -372,36 +367,31 @@ async function getNewsData(companyName: string, apiKey: string): Promise<any> {
 }
 
 // Enhanced SEC filings function
-async function getSECFilings(companyName: string, apiKey: string): Promise<any> {
-    const cacheKey = `sec_${companyName.toLowerCase()}`;
-    
+async function getSECFilings(companyName: string, apiKey: string): Promise<SECApiResponse | null> {
     try {
-        // Check cache first
-        const cachedData = await apiCache.get<any>(cacheKey);
-        if (cachedData) {
-            return cachedData;
-        }
-        
         const url = `https://api.sec-api.io/filings?company=${encodeURIComponent(companyName)}&token=${apiKey}`;
         const response = await fetch(url);
         
         if (!response.ok) {
-            throw new Error(`SEC API returned ${response.status}`);
+            throw new Error(`SEC API error: ${response.status}`);
         }
         
-        const data = await response.json() as SECApiResponse;
+        const data = await response.json() as any;
         
-        const result = {
-            filings: data.filings.map(filing => ({
-                type: filing.formType,
-                filingDate: filing.filedAt,
-                description: filing.description || '',
-                url: filing.linkToFilingDetails
-            }))
+        // Transform to our expected format
+        const result: SECApiResponse = {
+            filings: Array.isArray(data?.filings) 
+                ? data.filings.map((filing: any) => ({
+                    formType: filing.formType || '',
+                    filedAt: filing.filedAt || '',
+                    description: filing.description || '',
+                    linkToFilingDetails: filing.linkToFilingDetails || ''
+                  }))
+                : []
         };
         
         // Cache successful response
-        await apiCache.set(cacheKey, result);
+        await apiCache.set(`sec_${companyName.toLowerCase()}`, result);
         return result;
     } catch (error) {
         console.error("Error fetching SEC filings:", error);
@@ -411,182 +401,180 @@ async function getSECFilings(companyName: string, apiKey: string): Promise<any> 
 
 // Function to parse AI response into structured format
 function parseAIResponse(text: string): DueDiligenceResponse {
-    try {
-        // Try to parse as JSON first in case the AI returns proper JSON
-        try {
-            const jsonData = JSON.parse(text);
-            return jsonData as DueDiligenceResponse;
-        } catch (e) {
-            // Not valid JSON, parse as text
+    // Initialize the report structure
+    const report: DueDiligenceResponse = {
+        companyName: '',
+        timestamp: new Date().toISOString(),
+        executiveSummary: {
+            overview: '',
+            keyFindings: [],
+            riskRating: 'Medium',
+            recommendation: ''
+        },
+        financialAnalysis: {
+            metrics: {},
+            trends: [],
+            strengths: [],
+            weaknesses: []
+        },
+        marketAnalysis: {
+            position: '',
+            competitors: [],
+            marketShare: '',
+            swot: {
+                strengths: [],
+                weaknesses: [],
+                opportunities: [],
+                threats: []
+            }
+        },
+        riskAssessment: {
+            financial: [],
+            operational: [],
+            market: [],
+            regulatory: [],
+            esg: []
+        },
+        recentDevelopments: {
+            news: [],
+            filings: [],
+            management: [],
+            strategic: []
+        }
+    };
+
+    // Extract sections using regex
+    const sectionPattern = /\d+\. ([^\n]+)\n([\s\S]+?)(?=\n\d+\. |$)/g;
+    const sections: Record<string, string> = {};
+    let match;
+    
+    while ((match = sectionPattern.exec(text)) !== null) {
+        sections[match[1].trim()] = match[2].trim();
+    }
+    
+    // Extract company name
+    const companyNameMatch = text.match(/Due Diligence Report: ([^\n]+)/);
+    if (companyNameMatch) {
+        report.companyName = companyNameMatch[1].trim();
+    }
+    
+    // Parse Executive Summary
+    if (sections["Executive Summary"]) {
+        const content = sections["Executive Summary"];
+        
+        // Extract overview
+        const overviewMatch = content.match(/^([\s\S]+?)(?=\n\n|\nKey Findings)/i);
+        if (overviewMatch) {
+            report.executiveSummary.overview = overviewMatch[1].trim();
         }
         
-        // Default empty report structure
-        const report: DueDiligenceResponse = {
-            companyName: "",
-            timestamp: new Date().toISOString(),
-            executiveSummary: {
-                overview: "",
-                keyFindings: [],
-                riskRating: "Medium",
-                recommendation: ""
-            },
-            financialAnalysis: {
-                metrics: {},
-                trends: [],
-                strengths: [],
-                weaknesses: []
-            },
-            marketAnalysis: {
-                position: "",
-                competitors: [],
-                marketShare: "",
-                swot: {
-                    strengths: [],
-                    weaknesses: [],
-                    opportunities: [],
-                    threats: []
-                }
-            },
-            riskAssessment: {
-                financial: [],
-                operational: [],
-                market: [],
-                regulatory: [],
-                esg: []
-            },
-            recentDevelopments: {
-                news: [],
-                filings: [],
-                management: [],
-                strategic: []
+        // Extract key findings
+        const findingsMatch = content.match(/Key Findings[^:]*:([\s\S]+?)(?=\n\nRisk Rating|\n\nRecommendation|$)/i);
+        if (findingsMatch) {
+            report.executiveSummary.keyFindings = findingsMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+        
+        // Extract risk rating
+        const riskMatch = content.match(/Risk Rating[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (riskMatch) {
+            const riskText = riskMatch[1].trim().toLowerCase();
+            if (riskText.includes('high')) {
+                report.executiveSummary.riskRating = 'High';
+            } else if (riskText.includes('low')) {
+                report.executiveSummary.riskRating = 'Low';
+            } else {
+                report.executiveSummary.riskRating = 'Medium';
             }
-        };
+        }
         
-        // Parse sections from text
-        const sections: Record<string, string> = {};
+        // Extract recommendation
+        const recoMatch = content.match(/Recommendation[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (recoMatch) {
+            report.executiveSummary.recommendation = recoMatch[1].trim();
+        }
+    }
+    
+    // Parse Financial Analysis
+    if (sections["Financial Analysis"]) {
+        const content = sections["Financial Analysis"];
         
-        // Extract major sections
-        const sectionRegex = /\n\s*(\d+\.\s*[A-Z][A-Za-z\s&]+)\s*\n/g;
-        let match;
-        
-        const sectionMatches = [];
-        while ((match = sectionRegex.exec(text)) !== null) {
-            sectionMatches.push({
-                title: match[1].trim(),
-                start: match.index,
-                end: text.length // Will be updated for all but the last one
+        // Extract metrics
+        const metricsMatch = content.match(/Key Metrics[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (metricsMatch) {
+            const metricsText = metricsMatch[1];
+            const metricLines = metricsText.split('\n').filter(line => line.includes(':'));
+            
+            metricLines.forEach(line => {
+                const [key, value] = line.split(':').map(part => part.trim());
+                if (key && value) {
+                    report.financialAnalysis.metrics[key] = value;
+                }
             });
         }
         
-        // Set proper end positions
-        for (let i = 0; i < sectionMatches.length - 1; i++) {
-            sectionMatches[i].end = sectionMatches[i + 1].start;
+        // Extract trends
+        const trendsMatch = content.match(/Trends[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (trendsMatch) {
+            report.financialAnalysis.trends = trendsMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
         }
         
-        // Extract section content
-        sectionMatches.forEach(section => {
-            const content = text.substring(section.start, section.end).replace(section.title, '').trim();
-            sections[section.title] = content;
-        });
-        
-        // Parse Executive Summary
-        if (sections["1. Executive Summary"]) {
-            report.executiveSummary.overview = sections["1. Executive Summary"]
-                .split('\n\n')[0]
-                .replace(/^[^a-zA-Z]+/, '')
-                .trim();
-            
-            // Extract key findings
-            const findingsMatch = sections["1. Executive Summary"].match(/Key findings[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
-            if (findingsMatch) {
-                report.executiveSummary.keyFindings = findingsMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Extract risk rating
-            const riskMatch = sections["1. Executive Summary"].match(/Risk rating[^:]*:\s*(Low|Medium|High)/i);
-            if (riskMatch) {
-                report.executiveSummary.riskRating = riskMatch[1] as any;
-            }
-            
-            // Extract recommendation
-            const recoMatch = sections["1. Executive Summary"].match(/Recommendation[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|\Z)/i);
-            if (recoMatch) {
-                report.executiveSummary.recommendation = recoMatch[1].trim();
-            }
+        // Extract strengths
+        const strengthsMatch = content.match(/Strengths[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (strengthsMatch) {
+            report.financialAnalysis.strengths = strengthsMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
         }
         
-        // Parse Financial Analysis
-        if (sections["2. Financial Analysis"]) {
-            const content = sections["2. Financial Analysis"];
-            
-            // Extract metrics
-            const metricsMatch = content.match(/Key (financial )?metrics[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
-            if (metricsMatch) {
-                const metricsText = metricsMatch[2];
-                const metricItems = metricsText.match(/[•-]?\s*([^:]+):\s*([^•\n]+)/g);
-                
-                if (metricItems) {
-                    metricItems.forEach(item => {
-                        const [key, value] = item.split(/:\s*/);
-                        if (key && value) {
-                            report.financialAnalysis.metrics[key.replace(/^[•-]\s*/, '').trim()] = value.trim();
-                        }
-                    });
-                }
-            }
-            
-            // Extract trends
-            const trendsMatch = content.match(/(?:Revenue|Profitability|Financial)\s+trends[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
-            if (trendsMatch) {
-                report.financialAnalysis.trends = trendsMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Extract strengths
-            const strengthsMatch = content.match(/(?:Financial )?[Ss]trengths[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|Weaknesses)/i);
-            if (strengthsMatch) {
-                report.financialAnalysis.strengths = strengthsMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Extract weaknesses
-            const weaknessesMatch = content.match(/(?:Financial )?[Ww]eaknesses[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
-            if (weaknessesMatch) {
-                report.financialAnalysis.weaknesses = weaknessesMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
+        // Extract weaknesses
+        const weaknessesMatch = content.match(/Weaknesses[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (weaknessesMatch) {
+            report.financialAnalysis.weaknesses = weaknessesMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+    }
+    
+    // Parse Market Analysis
+    if (sections["Market Analysis"]) {
+        const content = sections["Market Analysis"];
+        
+        // Extract market position
+        const positionMatch = content.match(/^([\s\S]+?)(?=\n\n|\nCompetitors)/i);
+        if (positionMatch) {
+            report.marketAnalysis.position = positionMatch[1].trim();
         }
         
-        // Parse Market Analysis
-        if (sections["3. Market Position & Competitive Analysis"] || sections["3. Market Analysis"]) {
-            const content = sections["3. Market Position & Competitive Analysis"] || sections["3. Market Analysis"];
+        // Extract competitors
+        const competitorsMatch = content.match(/Competitors[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (competitorsMatch) {
+            report.marketAnalysis.competitors = competitorsMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+        
+        // Extract market share
+        const shareMatch = content.match(/Market Share[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (shareMatch) {
+            report.marketAnalysis.marketShare = shareMatch[1].trim();
+        }
+        
+        // Extract SWOT
+        const swotMatch = content.match(/SWOT Analysis[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (swotMatch) {
+            const swotText = swotMatch[1];
             
-            // Extract market position
-            report.marketAnalysis.position = content.split('\n\n')[0].trim();
-            
-            // Extract competitors
-            const competitorsMatch = content.match(/[Cc]ompetitive landscape[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i) || 
-                                     content.match(/[Cc]ompetitors[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
-            if (competitorsMatch) {
-                report.marketAnalysis.competitors = competitorsMatch[1]
-                    .split(/\n[•-]\s*|,\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Extract SWOT
             // Strengths
-            const swotStrengthsMatch = content.match(/SWOT[^:]*strengths[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Ww]eaknesses)/i) || 
-                                      content.match(/[Ss]trengths[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Ww]eaknesses)/i);
+            const swotStrengthsMatch = swotText.match(/Strengths[^:]*:([\s\S]+?)(?=\n\nWeaknesses|\n\n[A-Z]|$)/i);
             if (swotStrengthsMatch) {
                 report.marketAnalysis.swot.strengths = swotStrengthsMatch[1]
                     .split(/\n[•-]\s*/)
@@ -595,8 +583,7 @@ function parseAIResponse(text: string): DueDiligenceResponse {
             }
             
             // Weaknesses
-            const swotWeaknessesMatch = content.match(/SWOT[^:]*weaknesses[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Oo]pportunities)/i) || 
-                                       content.match(/[Ww]eaknesses[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Oo]pportunities)/i);
+            const swotWeaknessesMatch = swotText.match(/Weaknesses[^:]*:([\s\S]+?)(?=\n\nOpportunities|\n\n[A-Z]|$)/i);
             if (swotWeaknessesMatch) {
                 report.marketAnalysis.swot.weaknesses = swotWeaknessesMatch[1]
                     .split(/\n[•-]\s*/)
@@ -605,8 +592,7 @@ function parseAIResponse(text: string): DueDiligenceResponse {
             }
             
             // Opportunities
-            const swotOpportunitiesMatch = content.match(/SWOT[^:]*opportunities[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Tt]hreats)/i) || 
-                                          content.match(/[Oo]pportunities[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Tt]hreats)/i);
+            const swotOpportunitiesMatch = swotText.match(/Opportunities[^:]*:([\s\S]+?)(?=\n\nThreats|\n\n[A-Z]|$)/i);
             if (swotOpportunitiesMatch) {
                 report.marketAnalysis.swot.opportunities = swotOpportunitiesMatch[1]
                     .split(/\n[•-]\s*/)
@@ -615,8 +601,7 @@ function parseAIResponse(text: string): DueDiligenceResponse {
             }
             
             // Threats
-            const swotThreatsMatch = content.match(/SWOT[^:]*threats[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i) || 
-                                    content.match(/[Tt]hreats[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z])/i);
+            const swotThreatsMatch = swotText.match(/Threats[^:]*:([\s\S]+?)(?=\n\n|$)/i);
             if (swotThreatsMatch) {
                 report.marketAnalysis.swot.threats = swotThreatsMatch[1]
                     .split(/\n[•-]\s*/)
@@ -624,101 +609,59 @@ function parseAIResponse(text: string): DueDiligenceResponse {
                     .filter(Boolean);
             }
         }
+    }
+    
+    // Parse Risk Assessment
+    if (sections["Risk Assessment"]) {
+        const content = sections["Risk Assessment"];
         
-        // Parse Risk Assessment
-        if (sections["4. Risk Assessment"]) {
-            const content = sections["4. Risk Assessment"];
-            
-            // Financial risks
-            const financialRisksMatch = content.match(/[Ff]inancial risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Oo]perational)/i);
-            if (financialRisksMatch) {
-                report.riskAssessment.financial = financialRisksMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Operational risks
-            const operationalRisksMatch = content.match(/[Oo]perational risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Mm]arket)/i);
-            if (operationalRisksMatch) {
-                report.riskAssessment.operational = operationalRisksMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Market risks
-            const marketRisksMatch = content.match(/[Mm]arket risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|[Rr]egulatory)/i);
-            if (marketRisksMatch) {
-                report.riskAssessment.market = marketRisksMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Regulatory risks
-            const regulatoryRisksMatch = content.match(/[Rr]egulatory risks[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|ESG)/i);
-            if (regulatoryRisksMatch) {
-                report.riskAssessment.regulatory = regulatoryRisksMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // ESG considerations
-            const esgMatch = content.match(/ESG considerations[^:]*:([\s\S]+?)(?:\n\n|\n[A-Z]|\Z)/i);
-            if (esgMatch) {
-                report.riskAssessment.esg = esgMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
+        // Financial risks
+        const financialMatch = content.match(/Financial Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (financialMatch) {
+            report.riskAssessment.financial = financialMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
         }
         
-        return report;
-    } catch (error) {
-        console.error("Error parsing AI response:", error);
-        return {
-            companyName: "",
-            timestamp: new Date().toISOString(),
-            executiveSummary: {
-                overview: "Error generating report. Please try again.",
-                keyFindings: [],
-                riskRating: "Medium",
-                recommendation: ""
-            },
-            financialAnalysis: {
-                metrics: {},
-                trends: [],
-                strengths: [],
-                weaknesses: []
-            },
-            marketAnalysis: {
-                position: "",
-                competitors: [],
-                marketShare: "",
-                swot: {
-                    strengths: [],
-                    weaknesses: [],
-                    opportunities: [],
-                    threats: []
-                }
-            },
-            riskAssessment: {
-                financial: [],
-                operational: [],
-                market: [],
-                regulatory: [],
-                esg: []
-            },
-            recentDevelopments: {
-                news: [],
-                filings: [],
-                management: [],
-                strategic: []
-            }
-        };
+        // Operational risks
+        const operationalMatch = content.match(/Operational Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (operationalMatch) {
+            report.riskAssessment.operational = operationalMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+        
+        // Market risks
+        const marketMatch = content.match(/Market Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (marketMatch) {
+            report.riskAssessment.market = marketMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+        
+        // Regulatory risks
+        const regulatoryMatch = content.match(/Regulatory Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (regulatoryMatch) {
+            report.riskAssessment.regulatory = regulatoryMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+        
+        // ESG considerations
+        const esgMatch = content.match(/ESG considerations[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
+        if (esgMatch) {
+            report.riskAssessment.esg = esgMatch[1]
+                .split(/\n[•-]\s*/)
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
     }
+    
+    return report;
 }
 
 // Update the generateDueDiligence function

@@ -41,18 +41,20 @@ export const addPDFHeader = (doc: jsPDF, title: string): void => {
  * Add a footer to the PDF document
  */
 export const addPDFFooter = (doc: jsPDF, pageNumber: number, totalPages: number): void => {
-  const footerText = `Page ${pageNumber} of ${totalPages} | AI Diligence Pro | Confidential`;
+  const footerText = `Page ${pageNumber} of ${totalPages} | Visit aidiligence.pro for more reports | Confidential`;
   
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
   doc.text(footerText, 105, 285, { align: 'center' });
   
+  // Add website link
+  doc.setTextColor(66, 133, 244); // Blue color for the link
+  doc.textWithLink('aidiligence.pro', 105, 290, { align: 'center', url: 'https://aidiligence.pro' });
+  doc.setTextColor(100, 100, 100); // Reset color
+  
   // Add horizontal line
   doc.setDrawColor(200, 200, 200);
   doc.line(20, 280, 190, 280);
-  
-  // Reset text color
-  doc.setTextColor(0, 0, 0);
 };
 
 /**
@@ -77,12 +79,46 @@ export const addPDFSection = (
   doc.setFont(undefined, 'bold');
   doc.text(title, 20, startY);
   
-  // Add section content
+  // Add content
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
-  const contentLines = formatTextForPDF(doc, content, maxWidth);
-  doc.text(contentLines, 20, startY + 10);
   
-  // Return the new Y position after this section
-  return startY + 10 + (contentLines.length * 5);
+  const contentLines = formatTextForPDF(doc, content, maxWidth);
+  const lineHeight = 5;
+  
+  let currentY = startY + 10;
+  
+  contentLines.forEach(line => {
+    doc.text(line, 20, currentY);
+    currentY += lineHeight;
+  });
+  
+  // Return the Y position after this section
+  return currentY + 5;
+};
+
+/**
+ * Add watermark and backlink to the PDF
+ */
+export const addWatermarkAndBacklink = (doc: jsPDF): void => {
+  const totalPages = doc.getNumberOfPages();
+  
+  // Add watermark and backlink to each page
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    
+    // Add watermark
+    doc.setFontSize(40);
+    doc.setTextColor(230, 230, 230); // Light gray
+    doc.text('aidiligence.pro', 105, 150, { 
+      align: 'center',
+      angle: 45
+    });
+    
+    // Add backlink in footer
+    addPDFFooter(doc, i, totalPages);
+  }
+  
+  // Reset text color
+  doc.setTextColor(0, 0, 0);
 };

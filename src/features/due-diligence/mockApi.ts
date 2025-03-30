@@ -1,559 +1,1218 @@
-// Mock API for local development
-import { DueDiligenceReportType } from './types';
+// Mock API for local development and fallback
+import { DueDiligenceReportType, CompanyData, ReportOptions } from './types';
+import axios from 'axios';
+
+// Helper functions for report generation
+const getCompetitorsByIndustry = (industry: string): string[] => {
+  // This would ideally be a more sophisticated lookup based on industry
+  const industryCompetitors: Record<string, string[]> = {
+    'Auto Manufacturers': ['Tesla', 'Ford', 'General Motors', 'Toyota', 'Volkswagen'],
+    'Software': ['Microsoft', 'Oracle', 'Salesforce', 'Adobe', 'SAP'],
+    'Consumer Electronics': ['Apple', 'Sony', 'Samsung', 'HP', 'Dell'],
+    'Semiconductors': ['NVIDIA', 'AMD', 'Intel', 'TSMC', 'Qualcomm'],
+    'Retail': ['Amazon', 'Walmart', 'Target', 'Costco', 'JD.com'],
+    'Aerospace & Defense': ['Boeing', 'Lockheed Martin', 'Raytheon', 'General Dynamics', 'Northrop Grumman'],
+    'Pharmaceutical': ['CVS Health', 'Walgreens', 'Rite Aid', 'Dr. Reddy\'s', 'Teva'],
+    'Banking': ['JPMorgan Chase', 'Bank of America', 'Wells Fargo', 'Citigroup', 'Goldman Sachs']
+  };
+  
+  return industryCompetitors[industry] || ['Competitor 1', 'Competitor 2', 'Competitor 3', 'Competitor 4', 'Competitor 5'];
+};
+
+// API Keys (in a real app, these would be environment variables)
+const ALPHA_VANTAGE_API_KEY = 'demo'; // Replace with actual key in production
+const NEWS_API_KEY = 'demo'; // Replace with actual key in production
+const SEC_API_KEY = 'demo'; // Replace with actual key in production
+
+// API endpoints
+const ALPHA_VANTAGE_ENDPOINT = 'https://www.alphavantage.co/query';
+const NEWS_API_ENDPOINT = 'https://newsapi.org/v2/everything';
+const SEC_API_ENDPOINT = 'https://api.sec-api.io';
+
+// Function to fetch company overview from Alpha Vantage
+async function fetchCompanyOverview(ticker: string): Promise<CompanyData | null> {
+  try {
+    const response = await axios.get(ALPHA_VANTAGE_ENDPOINT, {
+      params: {
+        function: 'OVERVIEW',
+        symbol: ticker,
+        apikey: ALPHA_VANTAGE_API_KEY
+      }
+    });
+    
+    if (response.data && response.data.Symbol) {
+      // Convert numeric strings to numbers
+      const data = response.data;
+      return {
+        Symbol: data.Symbol,
+        AssetType: data.AssetType,
+        Name: data.Name,
+        Description: data.Description,
+        Exchange: data.Exchange,
+        Currency: data.Currency,
+        Country: data.Country,
+        Sector: data.Sector,
+        Industry: data.Industry,
+        MarketCapitalization: Number(data.MarketCapitalization),
+        EBITDA: Number(data.EBITDA),
+        PERatio: Number(data.PERatio),
+        PEGRatio: Number(data.PEGRatio),
+        BookValue: Number(data.BookValue),
+        DividendPerShare: Number(data.DividendPerShare),
+        DividendYield: Number(data.DividendYield),
+        EPS: Number(data.EPS),
+        ProfitMargin: Number(data.ProfitMargin),
+        QuarterlyEarningsGrowthYOY: Number(data.QuarterlyEarningsGrowthYOY),
+        QuarterlyRevenueGrowthYOY: Number(data.QuarterlyRevenueGrowthYOY),
+        AnalystTargetPrice: Number(data.AnalystTargetPrice),
+        TrailingPE: Number(data.TrailingPE),
+        ForwardPE: Number(data.ForwardPE),
+        PriceToSalesRatioTTM: Number(data.PriceToSalesRatioTTM),
+        PriceToBookRatio: Number(data.PriceToBookRatio),
+        EVToRevenue: Number(data.EVToRevenue),
+        EVToEBITDA: Number(data.EVToEBITDA),
+        Beta: Number(data.Beta),
+        '52WeekHigh': Number(data['52WeekHigh']),
+        '52WeekLow': Number(data['52WeekLow']),
+        '50DayMovingAverage': Number(data['50DayMovingAverage']),
+        '200DayMovingAverage': Number(data['200DayMovingAverage']),
+        SharesOutstanding: Number(data.SharesOutstanding),
+        DividendDate: data.DividendDate,
+        ExDividendDate: data.ExDividendDate
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching company overview:', error);
+    return null;
+  }
+}
+
+// Function to fetch company news
+async function fetchCompanyNews(companyName: string): Promise<any[]> {
+  try {
+    const response = await axios.get(NEWS_API_ENDPOINT, {
+      params: {
+        q: companyName,
+        from: '2025-03-01',
+        to: '2025-03-30',
+        sortBy: 'publishedAt',
+        apiKey: NEWS_API_KEY
+      }
+    });
+    
+    if (response.data && response.data.articles) {
+      return response.data.articles.map((article: any) => ({
+        title: article.title,
+        date: new Date(article.publishedAt).toISOString().split('T')[0],
+        summary: article.description,
+        url: article.url
+      }));
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching company news:', error);
+    return [];
+  }
+}
+
+// Function to fetch SEC filings
+async function fetchSECFilings(ticker: string): Promise<any[]> {
+  try {
+    const response = await axios.get(`${SEC_API_ENDPOINT}/filings`, {
+      params: {
+        ticker: ticker,
+        from: '2025-01-01',
+        to: '2025-03-30',
+        token: SEC_API_KEY
+      }
+    });
+    
+    if (response.data && response.data.filings) {
+      return response.data.filings.map((filing: any) => ({
+        type: filing.formType,
+        date: filing.filedAt.split('T')[0],
+        description: `${filing.formType} filing for period ending ${filing.periodOfReport}`,
+        url: filing.linkToFilingDetails
+      }));
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching SEC filings:', error);
+    return [];
+  }
+}
+
+// Mock data for Apple (AAPL)
+const mockAppleReport: DueDiligenceReportType = {
+  companyName: 'Apple Inc. (AAPL)',
+  companyData: {
+    ticker: 'AAPL',
+    exchange: 'NASDAQ',
+    industry: 'Consumer Electronics',
+    sector: 'Technology',
+    marketCap: 2850000000000, // $2.85 trillion
+    employees: 164000,
+    founded: 1976,
+    ceo: 'Tim Cook',
+    headquarters: 'Cupertino, California, USA',
+    website: 'https://www.apple.com'
+  },
+  executiveSummary: {
+    overview: 'Apple Inc. continues to demonstrate strong financial performance and market leadership in the consumer electronics and services sectors. The company maintains a robust balance sheet with significant cash reserves and consistent revenue growth, particularly in its services segment.',
+    keyFindings: [
+      'Strong financial position with over $200 billion in cash and marketable securities',
+      'Continued growth in high-margin services revenue (App Store, Apple Music, Apple TV+)',
+      'Robust ecosystem creating high customer retention and recurring revenue',
+      'Potential risks from regulatory scrutiny and supply chain dependencies'
+    ],
+    riskRating: 'Low',
+    recommendation: 'Apple represents a stable investment with strong fundamentals and consistent returns to shareholders through dividends and share repurchases.'
+  },
+  financialAnalysis: {
+    overview: 'Apple maintains exceptional financial health with industry-leading margins, strong cash flow generation, and a robust balance sheet. The company continues to return significant capital to shareholders while investing in future growth opportunities.',
+    metrics: {
+      'Market Cap': '$2.85 trillion',
+      'Revenue (TTM)': '$383.3 billion',
+      'Net Income': '$96.9 billion',
+      'Profit Margin': '25.3%',
+      'P/E Ratio': '29.4',
+      'EPS (TTM)': '$6.14',
+      'Dividend Yield': '0.52%',
+      'Cash & Equivalents': '$205.1 billion',
+      'Total Debt': '$120.0 billion',
+      'Debt-to-Equity': '1.52',
+      'Return on Equity': '160.1%',
+      'Return on Assets': '28.4%',
+      'Current Ratio': '0.99',
+      'Quick Ratio': '0.92',
+      'Operating Margin': '30.1%',
+      'Free Cash Flow (TTM)': '$110.5 billion'
+    },
+    trends: 'Apple has demonstrated consistent revenue growth over the past five years, with services revenue growing at a faster rate than hardware. Gross margins have improved as the revenue mix shifts toward higher-margin services. The company continues to generate substantial free cash flow, allowing for significant shareholder returns.',
+    strengths: [
+      'Exceptional cash flow generation and capital return program',
+      'Growing high-margin services business',
+      'Strong brand value and customer loyalty',
+      'Vertical integration of hardware, software, and services'
+    ],
+    weaknesses: [
+      'Dependence on iPhone for majority of revenue',
+      'Exposure to supply chain disruptions',
+      'Increasing regulatory scrutiny in key markets',
+      'Slowing growth in mature smartphone market'
+    ]
+  },
+  marketAnalysis: {
+    overview: 'Apple maintains dominant positions in premium smartphones, tablets, and wearables while expanding its ecosystem through services. The company leverages its brand strength and ecosystem integration to maintain premium pricing and customer loyalty.',
+    position: 'Apple holds a dominant position in the premium segment of several hardware categories and is rapidly expanding its services ecosystem. While not always the market share leader by volume, Apple captures the majority of industry profits in smartphones and maintains strong positions in tablets, wearables, and personal computers.',
+    competitors: [
+      {
+        name: 'Samsung Electronics',
+        strengths: 'Vertical integration, component manufacturing, diverse product portfolio',
+        weaknesses: 'Lower software/services integration, lower profit margins than Apple'
+      },
+      {
+        name: 'Microsoft',
+        strengths: 'Enterprise software dominance, cloud services, subscription revenue model',
+        weaknesses: 'Limited hardware ecosystem compared to Apple'
+      },
+      {
+        name: 'Alphabet (Google)',
+        strengths: 'Android OS market share, search and advertising dominance, AI capabilities',
+        weaknesses: 'Less hardware/software integration, privacy concerns'
+      },
+      {
+        name: 'Amazon',
+        strengths: 'E-commerce platform, AWS cloud services, smart home devices',
+        weaknesses: 'Limited premium hardware presence, thinner margins'
+      }
+    ],
+    swot: {
+      strengths: [
+        'Strong brand recognition and customer loyalty',
+        'Seamless integration across hardware, software, and services',
+        'Premium pricing power and high margins',
+        'Robust research and development capabilities'
+      ],
+      weaknesses: [
+        'Premium pricing limits market share in developing markets',
+        'Reliance on iPhone for majority of revenue',
+        'Limited presence in enterprise solutions compared to competitors',
+        'Closed ecosystem approach limits certain partnerships'
+      ],
+      opportunities: [
+        'Expansion into healthcare technology and services',
+        'Growth in wearables and augmented reality',
+        'Further penetration of financial services through Apple Pay',
+        'Emerging markets growth with targeted products'
+      ],
+      threats: [
+        'Increasing regulatory scrutiny and potential antitrust actions',
+        'Rising competition in services (streaming, gaming)',
+        'Geopolitical tensions affecting global supply chain',
+        'Saturation in key product categories'
+      ]
+    }
+  },
+  riskAssessment: {
+    overview: 'Apple faces several key risk categories, though its financial strength and market position mitigate many concerns. The primary risks include regulatory challenges, supply chain dependencies, and market saturation in key product categories.',
+    riskRating: 'low',
+    financial: 'Apple faces minimal financial risk due to its strong balance sheet, consistent cash flow generation, and conservative financial management. The company maintains significant cash reserves and manageable debt levels.',
+    operational: 'Supply chain concentration in China and other Asian countries presents operational risk, as demonstrated during recent global disruptions. Apple is gradually diversifying manufacturing locations to mitigate this risk.',
+    market: 'Market saturation in smartphones and potential commoditization of hardware present long-term market risks. Apple mitigates these through ecosystem lock-in, services growth, and continuous innovation in new product categories.',
+    regulatory: 'Apple faces increasing regulatory scrutiny regarding App Store policies, competitive practices, and data privacy. Potential forced changes to business practices, particularly regarding the App Store commission structure, could impact services revenue growth.',
+    esgConsiderations: 'Apple has made significant commitments to environmental sustainability, including carbon neutrality goals and reduced packaging. Labor practices in the supply chain remain an ongoing area of focus for improvement and monitoring.',
+    riskFactors: {
+      financial: [
+        'Foreign exchange fluctuations impacting international revenue',
+        'Tax policy changes in major markets',
+        'Potential goodwill impairment from acquisitions'
+      ],
+      operational: [
+        'Supply chain disruptions due to geopolitical tensions',
+        'Manufacturing concentration in specific regions',
+        'Intellectual property theft or infringement',
+        'Talent retention in competitive tech labor market'
+      ],
+      market: [
+        'Smartphone market saturation',
+        'Intensifying competition in services',
+        'Rapid technological change requiring continuous innovation',
+        'Changing consumer preferences'
+      ],
+      regulatory: [
+        'Antitrust investigations in US and EU',
+        'App Store commission structure scrutiny',
+        'Data privacy regulations',
+        'Digital services taxes in multiple jurisdictions'
+      ],
+      esg: [
+        'Supply chain labor practices',
+        'Electronic waste management',
+        'Carbon footprint of manufacturing operations',
+        'Product repairability concerns'
+      ]
+    }
+  },
+  recentDevelopments: {
+    news: [
+      {
+        title: 'Apple Announces New iPhone 15 Pro with Titanium Design',
+        date: '2023-09-12',
+        summary: 'Apple unveiled its latest flagship smartphone featuring a titanium frame, improved camera system, and A17 Pro chip manufactured with 3nm process technology.',
+        url: 'https://www.apple.com/newsroom/'
+      },
+      {
+        title: 'Services Revenue Reaches All-Time High in Q3 2023',
+        date: '2023-08-03',
+        summary: 'Apple reported record services revenue of $21.2 billion for the quarter, representing 16% year-over-year growth and highlighting the success of the company\'s subscription strategy.',
+        url: 'https://www.apple.com/investor/'
+      },
+      {
+        title: 'Apple Vision Pro Set to Launch in Early 2024',
+        date: '2023-06-05',
+        summary: 'Apple announced its entry into the spatial computing category with Vision Pro, a mixed reality headset priced at $3,499 that blends digital content with the physical world.',
+        url: 'https://www.apple.com/apple-vision-pro/'
+      }
+    ],
+    filings: [
+      {
+        type: '10-Q Quarterly Report',
+        date: '2023-07-28',
+        description: 'Quarterly financial results showing $81.8 billion in revenue and $19.9 billion in net income for fiscal Q3 2023.',
+        url: 'https://investor.apple.com/sec-filings/'
+      },
+      {
+        type: 'Proxy Statement',
+        date: '2023-01-12',
+        description: 'Annual proxy statement detailing executive compensation, board matters, and shareholder proposals for the annual meeting.',
+        url: 'https://investor.apple.com/sec-filings/'
+      }
+    ],
+    strategic: [
+      {
+        title: 'Apple Intelligence AI Strategy',
+        date: '2023-06-05',
+        summary: 'Apple announced its comprehensive AI strategy focusing on on-device processing for privacy, including enhanced Siri capabilities and system-wide intelligence features coming to iOS 18.',
+      },
+      {
+        title: 'Manufacturing Diversification Initiative',
+        date: '2023-04-18',
+        summary: 'Apple continues to expand manufacturing beyond China, with new facilities in India and Vietnam coming online to reduce geographic concentration risk.',
+      },
+      {
+        title: 'Carbon Neutrality Commitment',
+        date: '2022-10-13',
+        summary: 'Apple reaffirmed its commitment to become carbon neutral across its entire business, manufacturing supply chain, and product life cycle by 2030.',
+      }
+    ]
+  },
+  conclusion: 'Apple Inc. maintains its position as one of the world\'s most valuable companies with strong fundamentals, a loyal customer base, and an expanding ecosystem of products and services. While facing challenges from market saturation, regulatory scrutiny, and supply chain dependencies, the company\'s financial strength, brand power, and innovation capabilities provide significant competitive advantages. Apple\'s growing services segment, expansion into new product categories, and focus on privacy and sustainability align well with current market trends and consumer preferences. For investors, Apple represents a relatively stable investment with a balanced mix of growth potential and capital return through dividends and share repurchases.'
+};
+
+// Mock data for Microsoft (MSFT)
+const mockMicrosoftReport: DueDiligenceReportType = {
+  companyName: 'Microsoft Corporation (MSFT)',
+  companyData: {
+    ticker: 'MSFT',
+    exchange: 'NASDAQ',
+    industry: 'Software',
+    sector: 'Technology',
+    marketCap: 2500000000000, // $2.5 trillion
+    employees: 180000,
+    founded: 1975,
+    ceo: 'Satya Nadella',
+    headquarters: 'Redmond, Washington, USA',
+    website: 'https://www.microsoft.com'
+  },
+  executiveSummary: {
+    overview: 'Microsoft Corporation continues to demonstrate strong financial performance and market leadership in the software and cloud services sectors. The company maintains a robust balance sheet with significant cash reserves and consistent revenue growth, particularly in its cloud services segment.',
+    keyFindings: [
+      'Strong financial position with over $130 billion in cash and marketable securities',
+      'Continued growth in high-margin cloud services revenue (Azure, Office 365)',
+      'Robust ecosystem creating high customer retention and recurring revenue',
+      'Potential risks from increasing competition in cloud services'
+    ],
+    riskRating: 'Low',
+    recommendation: 'Microsoft represents a stable investment with strong fundamentals and consistent returns to shareholders through dividends and share repurchases.'
+  },
+  financialAnalysis: {
+    overview: 'Microsoft maintains exceptional financial health with industry-leading margins, strong cash flow generation, and a robust balance sheet. The company continues to return significant capital to shareholders while investing in future growth opportunities.',
+    metrics: {
+      'Market Cap': '$2.5 trillion',
+      'Revenue (TTM)': '$211.9 billion',
+      'Net Income': '$72.4 billion',
+      'Profit Margin': '34.2%',
+      'P/E Ratio': '34.8',
+      'EPS (TTM)': '$9.65',
+      'Dividend Yield': '0.81%',
+      'Cash & Equivalents': '$111.3 billion',
+      'Total Debt': '$70.0 billion',
+      'Debt-to-Equity': '0.83',
+      'Return on Equity': '43.2%',
+      'Return on Assets': '14.1%',
+      'Current Ratio': '2.53',
+      'Quick Ratio': '2.46',
+      'Operating Margin': '42.1%',
+      'Free Cash Flow (TTM)': '$63.1 billion'
+    },
+    trends: 'Microsoft has demonstrated consistent revenue growth over the past five years, with cloud services revenue growing at a faster rate than traditional software. Gross margins have improved as the revenue mix shifts toward higher-margin cloud services. The company continues to generate substantial free cash flow, allowing for significant shareholder returns.',
+    strengths: [
+      'Exceptional cash flow generation and capital return program',
+      'Growing high-margin cloud services business',
+      'Strong brand value and customer loyalty',
+      'Vertical integration of software and services'
+    ],
+    weaknesses: [
+      'Dependence on Windows and Office for majority of revenue',
+      'Exposure to competition in cloud services',
+      'Increasing regulatory scrutiny in key markets',
+      'Slowing growth in mature software market'
+    ]
+  },
+  marketAnalysis: {
+    overview: 'Microsoft maintains dominant positions in enterprise software and cloud services while expanding its ecosystem through strategic acquisitions and partnerships. The company leverages its brand strength and ecosystem integration to maintain premium pricing and customer loyalty.',
+    position: 'Microsoft holds a dominant position in the enterprise software market and is rapidly expanding its cloud services ecosystem. While facing challenges from increasing competition in cloud services, the company\'s financial strength, brand power, and innovation capabilities provide significant competitive advantages.',
+    competitors: [
+      {
+        name: 'Amazon Web Services (AWS)',
+        strengths: 'Market share leadership in cloud infrastructure, diverse product portfolio',
+        weaknesses: 'Lower profit margins compared to Microsoft'
+      },
+      {
+        name: 'Alphabet (Google)',
+        strengths: 'Search and advertising dominance, AI capabilities',
+        weaknesses: 'Less enterprise software presence compared to Microsoft'
+      },
+      {
+        name: 'Apple',
+        strengths: 'Strong brand recognition and customer loyalty, premium pricing power',
+        weaknesses: 'Limited enterprise software presence compared to Microsoft'
+      },
+      {
+        name: 'Oracle',
+        strengths: 'Enterprise software dominance, cloud services growth',
+        weaknesses: 'Lower profit margins compared to Microsoft'
+      }
+    ],
+    swot: {
+      strengths: [
+        'Strong brand recognition and customer loyalty',
+        'Seamless integration across software and services',
+        'Premium pricing power and high margins',
+        'Robust research and development capabilities'
+      ],
+      weaknesses: [
+        'Dependence on Windows and Office for majority of revenue',
+        'Exposure to competition in cloud services',
+        'Increasing regulatory scrutiny in key markets',
+        'Slowing growth in mature software market'
+      ],
+      opportunities: [
+        'Expansion into emerging markets',
+        'Growth in cloud services and artificial intelligence',
+        'Further penetration of gaming market through Xbox',
+        'Strategic acquisitions and partnerships'
+      ],
+      threats: [
+        'Increasing competition in cloud services',
+        'Rising regulatory scrutiny in key markets',
+        'Geopolitical tensions affecting global supply chain',
+        'Saturation in key product categories'
+      ]
+    }
+  },
+  riskAssessment: {
+    overview: 'Microsoft faces several key risk categories, though its financial strength and market position mitigate many concerns. The primary risks include regulatory challenges, competition in cloud services, and market saturation in key product categories.',
+    riskRating: 'low',
+    financial: 'Microsoft faces minimal financial risk due to its strong balance sheet, consistent cash flow generation, and conservative financial management. The company maintains significant cash reserves and manageable debt levels.',
+    operational: 'Supply chain concentration in Asia presents operational risk, as demonstrated during recent global disruptions. Microsoft is gradually diversifying manufacturing locations to mitigate this risk.',
+    market: 'Market saturation in software and potential commoditization of cloud services present long-term market risks. Microsoft mitigates these through ecosystem lock-in, cloud services growth, and continuous innovation in new product categories.',
+    regulatory: 'Microsoft faces increasing regulatory scrutiny regarding antitrust practices, data privacy, and cybersecurity. Potential forced changes to business practices could impact revenue growth.',
+    esgConsiderations: 'Microsoft has made significant commitments to environmental sustainability, including carbon neutrality goals and reduced packaging. Labor practices in the supply chain remain an ongoing area of focus for improvement and monitoring.',
+    riskFactors: {
+      financial: [
+        'Foreign exchange fluctuations impacting international revenue',
+        'Tax policy changes in major markets',
+        'Potential goodwill impairment from acquisitions'
+      ],
+      operational: [
+        'Supply chain disruptions due to geopolitical tensions',
+        'Manufacturing concentration in specific regions',
+        'Intellectual property theft or infringement',
+        'Talent retention in competitive tech labor market'
+      ],
+      market: [
+        'Cloud services competition',
+        'Intensifying competition in software',
+        'Rapid technological change requiring continuous innovation',
+        'Changing consumer preferences'
+      ],
+      regulatory: [
+        'Antitrust investigations in US and EU',
+        'Data privacy regulations',
+        'Cybersecurity requirements',
+        'Digital services taxes in multiple jurisdictions'
+      ],
+      esg: [
+        'Supply chain labor practices',
+        'Electronic waste management',
+        'Carbon footprint of manufacturing operations',
+        'Product repairability concerns'
+      ]
+    }
+  },
+  recentDevelopments: {
+    news: [
+      {
+        title: 'Microsoft Announces New Azure AI Capabilities',
+        date: '2023-09-12',
+        summary: 'Microsoft unveiled new AI features for Azure, enhancing machine learning capabilities for enterprise customers.',
+        url: 'https://www.microsoft.com/en-us/azure/ai'
+      },
+      {
+        title: 'Cloud Revenue Surges in Latest Quarter',
+        date: '2023-07-25',
+        summary: 'Microsoft reported 27% growth in Azure revenue, exceeding analyst expectations.',
+        url: 'https://www.microsoft.com/investor'
+      },
+      {
+        title: 'Microsoft Completes Acquisition of Activision Blizzard',
+        date: '2023-10-13',
+        summary: 'The $68.7 billion acquisition strengthens Microsoft\'s position in the gaming market.',
+        url: 'https://www.microsoft.com/en-us/news/press/2023/oct23/activisionblizzard.aspx'
+      }
+    ],
+    filings: [
+      {
+        type: '10-Q Quarterly Report',
+        date: '2023-07-27',
+        description: 'Quarterly financial results showing $56.2 billion in revenue and $20.1 billion in net income for fiscal Q4 2023.',
+        url: 'https://www.microsoft.com/investor/sec-filings.aspx'
+      },
+      {
+        type: 'Proxy Statement',
+        date: '2023-09-19',
+        description: 'Annual proxy statement detailing executive compensation, board matters, and shareholder proposals for the annual meeting.',
+        url: 'https://www.microsoft.com/investor/sec-filings.aspx'
+      }
+    ],
+    strategic: [
+      {
+        title: 'Microsoft AI Strategy',
+        date: '2023-06-05',
+        summary: 'Microsoft announced its comprehensive AI strategy focusing on on-device processing for privacy, including enhanced AI capabilities in Azure and Office 365.',
+      },
+      {
+        title: 'Gaming Expansion through Activision Blizzard Acquisition',
+        date: '2023-10-13',
+        summary: 'Microsoft completed the acquisition of Activision Blizzard, expanding its gaming ecosystem and strengthening its position in the market.',
+      },
+      {
+        title: 'Carbon Neutrality Commitment',
+        date: '2022-10-13',
+        summary: 'Microsoft reaffirmed its commitment to become carbon neutral across its entire business, manufacturing supply chain, and product life cycle by 2030.',
+      }
+    ]
+  },
+  conclusion: 'Microsoft Corporation maintains its position as one of the world\'s most valuable companies with strong fundamentals, a loyal customer base, and an expanding ecosystem of software and services. While facing challenges from increasing competition in cloud services, regulatory scrutiny, and market saturation in key product categories, the company\'s financial strength, brand power, and innovation capabilities provide significant competitive advantages. Microsoft\'s growing cloud services segment, expansion into new product categories, and focus on sustainability align well with current market trends and consumer preferences. For investors, Microsoft represents a relatively stable investment with a balanced mix of growth potential and capital return through dividends and share repurchases.'
+};
 
 // Sample mock data for a due diligence report
 const mockReportData: Record<string, DueDiligenceReportType> = {
-  'apple': {
-    companyName: 'Apple Inc.',
-    timestamp: new Date().toISOString(),
-    executiveSummary: {
-      overview: 'Apple Inc. is a global technology company that designs, manufactures, and sells smartphones, personal computers, tablets, wearables, and accessories.',
-      keyFindings: 'Strong financial position with significant cash reserves. Continued innovation in product lines. Services segment showing strong growth.',
-      riskRating: 'Low',
-      recommendation: 'Buy'
-    },
-    financialAnalysis: {
-      revenueGrowth: 'Steady growth at 6% annually',
-      profitabilityMetrics: 'Industry-leading margins at 21.5% net profit',
-      balanceSheetAnalysis: 'Strong balance sheet with $200B in cash and investments',
-      cashFlowAnalysis: 'Consistent positive free cash flow of $90B annually',
-      peerComparison: 'Outperforms peers in most financial metrics'
-    },
-    marketAnalysis: {
-      industryOverview: 'Technology hardware and services industry continues to grow',
-      competitiveLandscape: 'Major competitors include Samsung, Google, and Microsoft',
-      swot: {
-        strengths: 'Brand recognition, ecosystem integration, premium pricing power',
-        weaknesses: 'Reliance on iPhone sales, high product prices',
-        opportunities: 'Expansion in services, wearables market growth',
-        threats: 'Increasing competition, regulatory scrutiny'
-      },
-      marketShare: '15% of global smartphone market',
-      competitiveAdvantages: 'Integrated ecosystem, brand loyalty, design excellence'
-    },
-    riskAssessment: {
-      financialRisks: 'Currency fluctuations, tax policy changes',
-      operationalRisks: 'Supply chain disruptions, manufacturing concentration in Asia',
-      marketRisks: 'Smartphone market saturation, competitive pressure',
-      regulatoryRisks: 'Antitrust investigations, privacy regulations',
-      esgConsiderations: 'Strong environmental initiatives, supply chain labor concerns'
-    },
-    recentDevelopments: {
-      news: [
-        {
-          title: 'Apple Announces New iPhone 15 Pro with Advanced AI Features',
-          description: 'The new iPhone 15 Pro includes advanced AI capabilities and improved camera system.',
-          url: 'https://example.com/apple-iphone15',
-          publishedAt: '2023-09-12T14:30:00Z',
-          source: { name: 'Tech News Daily' },
-          date: '2023-09-12'
-        },
-        {
-          title: 'Apple Services Revenue Reaches New Record',
-          description: 'Apple\'s services segment continues to grow, reaching $20 billion in quarterly revenue.',
-          url: 'https://example.com/apple-services',
-          publishedAt: '2023-08-03T10:15:00Z',
-          source: { name: 'Financial Times' },
-          date: '2023-08-03'
-        }
-      ],
-      filings: [
-        {
-          type: '10-Q',
-          filingDate: '2023-07-28',
-          description: 'Quarterly report for period ending June 30, 2023',
-          url: 'https://www.sec.gov/example/apple-10q',
-          date: '2023-07-28'
-        },
-        {
-          type: '8-K',
-          filingDate: '2023-06-15',
-          description: 'Current report announcing stock buyback program',
-          url: 'https://www.sec.gov/example/apple-8k',
-          date: '2023-06-15'
-        }
-      ],
-      strategicInitiatives: [
-        'Expansion of services ecosystem',
-        'Investment in augmented reality technology',
-        'Carbon neutrality goal by 2030'
-      ]
-    },
-    companyData: {
-      Symbol: 'AAPL',
-      AssetType: 'Common Stock',
-      Name: 'Apple Inc.',
-      Description: 'Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide.',
-      Exchange: 'NASDAQ',
-      Currency: 'USD',
-      Country: 'USA',
-      Sector: 'Technology',
-      Industry: 'Consumer Electronics',
-      MarketCapitalization: '2800000000000',
-      EBITDA: '125000000000',
-      PERatio: '30.5',
-      PEGRatio: '2.5',
-      DividendYield: '0.5',
-      EPS: '6.15',
-      RevenuePerShareTTM: '24.30',
-      ProfitMargin: '0.215',
-      OperatingMarginTTM: '0.30',
-      ReturnOnAssetsTTM: '0.20',
-      ReturnOnEquityTTM: '0.45',
-      RevenueTTM: '385000000000',
-      GrossProfitTTM: '170000000000',
-      DilutedEPSTTM: '6.15',
-      QuarterlyEarningsGrowthYOY: '0.05',
-      QuarterlyRevenueGrowthYOY: '0.06',
-      AnalystTargetPrice: '210',
-      TrailingPE: '30.5',
-      ForwardPE: '28.2',
-      PriceToSalesRatioTTM: '7.3',
-      PriceToBookRatio: '45.5',
-      EVToRevenue: '7.5',
-      EVToEBITDA: '22.5',
-      Beta: '1.2',
-      WeekHigh52: '215.50',
-      WeekLow52: '155.20',
-      DayMovingAverage50: '195.30',
-      DayMovingAverage200: '180.50',
-      SharesOutstanding: '16000000000',
-      SharesFloat: '15800000000',
-      SharesShort: '120000000',
-      SharesShortPriorMonth: '125000000',
-      ShortRatio: '1.2',
-      ShortPercentOutstanding: '0.75',
-      ShortPercentFloat: '0.76',
-      PercentInsiders: '0.07',
-      PercentInstitutions: '0.72',
-      ForwardAnnualDividendRate: '0.92',
-      ForwardAnnualDividendYield: '0.005',
-      PayoutRatio: '0.15',
-      DividendDate: '2023-08-17',
-      ExDividendDate: '2023-08-10',
-      LastSplitFactor: '4:1',
-      LastSplitDate: '2020-08-31'
-    }
-  },
-  'microsoft': {
-    companyName: 'Microsoft Corporation',
-    timestamp: new Date().toISOString(),
-    executiveSummary: {
-      overview: 'Microsoft Corporation is a global technology company that develops, licenses, and supports software, services, devices, and solutions worldwide.',
-      keyFindings: 'Strong cloud business growth with Azure. Diversified revenue streams. Solid financial performance.',
-      riskRating: 'Low',
-      recommendation: 'Buy'
-    },
-    financialAnalysis: {
-      revenueGrowth: 'Robust growth at 15% annually',
-      profitabilityMetrics: 'Strong margins at 35% operating margin',
-      balanceSheetAnalysis: 'Excellent balance sheet with $130B in cash and investments',
-      cashFlowAnalysis: 'Strong free cash flow of $60B annually',
-      peerComparison: 'Leading performance among enterprise software companies'
-    },
-    marketAnalysis: {
-      industryOverview: 'Cloud computing and enterprise software markets growing rapidly',
-      competitiveLandscape: 'Major competitors include Amazon, Google, and Oracle',
-      swot: {
-        strengths: 'Enterprise relationships, cloud infrastructure, diversified business',
-        weaknesses: 'Consumer hardware challenges, search market share',
-        opportunities: 'AI integration, gaming expansion, cloud growth',
-        threats: 'Cloud competition, regulatory concerns, cybersecurity threats'
-      },
-      marketShare: '20% of global cloud infrastructure market',
-      competitiveAdvantages: 'Enterprise relationships, integrated product suite, R&D capabilities'
-    },
-    riskAssessment: {
-      financialRisks: 'Currency fluctuations, tax policy changes',
-      operationalRisks: 'Cybersecurity threats, talent acquisition challenges',
-      marketRisks: 'Cloud competition, technological disruption',
-      regulatoryRisks: 'Antitrust concerns, data privacy regulations',
-      esgConsiderations: 'Carbon negative commitment, diversity initiatives, governance structure'
-    },
-    recentDevelopments: {
-      news: [
-        {
-          title: 'Microsoft Expands AI Capabilities in Azure',
-          description: 'Microsoft announced new AI features for its Azure cloud platform.',
-          url: 'https://example.com/microsoft-azure-ai',
-          publishedAt: '2023-09-05T09:45:00Z',
-          source: { name: 'Cloud Computing News' },
-          date: '2023-09-05'
-        },
-        {
-          title: 'Microsoft Gaming Division Reports Strong Growth',
-          description: 'Microsoft\'s gaming revenue increased 20% following Activision Blizzard acquisition.',
-          url: 'https://example.com/microsoft-gaming',
-          publishedAt: '2023-08-15T16:30:00Z',
-          source: { name: 'Gaming Industry Today' },
-          date: '2023-08-15'
-        }
-      ],
-      filings: [
-        {
-          type: '10-K',
-          filingDate: '2023-07-30',
-          description: 'Annual report for fiscal year ending June 30, 2023',
-          url: 'https://www.sec.gov/example/microsoft-10k',
-          date: '2023-07-30'
-        },
-        {
-          type: '8-K',
-          filingDate: '2023-06-08',
-          description: 'Current report announcing executive changes',
-          url: 'https://www.sec.gov/example/microsoft-8k',
-          date: '2023-06-08'
-        }
-      ],
-      strategicInitiatives: [
-        'Expansion of Azure cloud services',
-        'Integration of AI across product lines',
-        'Gaming ecosystem development'
-      ]
-    },
-    companyData: {
-      Symbol: 'MSFT',
-      AssetType: 'Common Stock',
-      Name: 'Microsoft Corporation',
-      Description: 'Microsoft Corporation develops, licenses, and supports software, services, devices, and solutions worldwide.',
-      Exchange: 'NASDAQ',
-      Currency: 'USD',
-      Country: 'USA',
-      Sector: 'Technology',
-      Industry: 'Software—Infrastructure',
-      MarketCapitalization: '2500000000000',
-      EBITDA: '100000000000',
-      PERatio: '35.2',
-      PEGRatio: '2.1',
-      DividendYield: '0.8',
-      EPS: '9.21',
-      RevenuePerShareTTM: '28.40',
-      ProfitMargin: '0.36',
-      OperatingMarginTTM: '0.42',
-      ReturnOnAssetsTTM: '0.18',
-      ReturnOnEquityTTM: '0.40',
-      RevenueTTM: '210000000000',
-      GrossProfitTTM: '140000000000',
-      DilutedEPSTTM: '9.21',
-      QuarterlyEarningsGrowthYOY: '0.15',
-      QuarterlyRevenueGrowthYOY: '0.12',
-      AnalystTargetPrice: '380',
-      TrailingPE: '35.2',
-      ForwardPE: '30.5',
-      PriceToSalesRatioTTM: '12.1',
-      PriceToBookRatio: '15.2',
-      EVToRevenue: '11.8',
-      EVToEBITDA: '25.1',
-      Beta: '0.9',
-      WeekHigh52: '380.50',
-      WeekLow52: '280.10',
-      DayMovingAverage50: '350.20',
-      DayMovingAverage200: '320.40',
-      SharesOutstanding: '7500000000',
-      SharesFloat: '7400000000',
-      SharesShort: '50000000',
-      SharesShortPriorMonth: '55000000',
-      ShortRatio: '1.0',
-      ShortPercentOutstanding: '0.67',
-      ShortPercentFloat: '0.68',
-      PercentInsiders: '0.04',
-      PercentInstitutions: '0.75',
-      ForwardAnnualDividendRate: '2.72',
-      ForwardAnnualDividendYield: '0.008',
-      PayoutRatio: '0.28',
-      DividendDate: '2023-09-14',
-      ExDividendDate: '2023-08-16',
-      LastSplitFactor: '2:1',
-      LastSplitDate: '2003-02-18'
-    }
-  },
-  // Add more companies as needed
+  'apple': mockAppleReport,
+  'microsoft': mockMicrosoftReport
 };
 
 // Default fallback report for companies not in our mock data
 const defaultReport: DueDiligenceReportType = {
   companyName: '',
-  timestamp: new Date().toISOString(),
+  ticker: '',
+  timestamp: Date.now(),
   executiveSummary: {
-    overview: 'This company operates in its respective industry with various products and services.',
-    keyFindings: 'Limited data available for comprehensive analysis.',
-    riskRating: 'Medium',
-    recommendation: 'Hold'
+    overview: 'This is a demo report with placeholder data. In a real report, this section would contain a concise summary of the company\'s financial health, market position, and key risks.',
+    keyFindings: [
+      'This is a demo report with placeholder data',
+      'In a real report, these would be key findings about the company',
+      'Subscribe to access full reports with real data',
+      'Our AI analyzes thousands of data points to generate insights',
+      'Upgrade to see comprehensive analysis and recommendations'
+    ],
+    riskRating: 'Demo data only',
+    recommendation: 'This is a demo report. Subscribe to access full reports with actionable recommendations.'
   },
   financialAnalysis: {
-    revenueGrowth: 'Data not available',
-    profitabilityMetrics: 'Data not available',
-    balanceSheetAnalysis: 'Data not available',
-    cashFlowAnalysis: 'Data not available',
-    peerComparison: 'Data not available'
+    overview: 'This section would contain a detailed analysis of the company\'s financial performance, including revenue trends, profitability, balance sheet strength, and cash flow analysis.',
+    metrics: {
+      'Revenue': 'Demo data',
+      'Profit Margin': 'Demo data',
+      'EPS': 'Demo data',
+      'P/E Ratio': 'Demo data',
+      'Market Cap': 'Demo data',
+      'Debt-to-Equity': 'Demo data'
+    },
+    trends: 'In a real report, this section would analyze revenue and earnings trends over time, highlighting key drivers and potential concerns.',
+    strengths: [
+      'This is placeholder data for demonstration purposes',
+      'Real reports include actual financial strengths',
+      'Subscribe to access comprehensive analysis'
+    ],
+    weaknesses: [
+      'This is placeholder data for demonstration purposes',
+      'Real reports include actual financial weaknesses',
+      'Subscribe to access comprehensive analysis'
+    ]
   },
   marketAnalysis: {
-    industryOverview: 'The company operates in its respective industry.',
-    competitiveLandscape: 'Various competitors exist in the market.',
+    overview: 'This section would analyze the company\'s market position, competitive landscape, industry trends, and growth opportunities.',
+    position: 'In a real report, this would describe the company\'s position within its industry.',
+    competitors: [
+      'Competitor 1 (Demo)',
+      'Competitor 2 (Demo)',
+      'Competitor 3 (Demo)',
+      'Competitor 4 (Demo)',
+      'Competitor 5 (Demo)'
+    ],
     swot: {
-      strengths: 'To be determined based on further research',
-      weaknesses: 'To be determined based on further research',
-      opportunities: 'To be determined based on further research',
-      threats: 'To be determined based on further research'
+      strengths: 'In a real report, this would list the company\'s competitive strengths',
+      weaknesses: 'In a real report, this would identify competitive weaknesses',
+      opportunities: 'In a real report, this would highlight market opportunities',
+      threats: 'In a real report, this would outline competitive and market threats'
     },
-    marketShare: 'Data not available',
-    competitiveAdvantages: 'To be determined based on further research'
+    marketShare: 'This is a demo report. Subscribe to access actual market share data and analysis.',
+    competitiveAdvantages: 'This is a demo report. Real reports include detailed analysis of competitive advantages.'
   },
   riskAssessment: {
-    financialRisks: 'Standard industry financial risks apply',
-    operationalRisks: 'Standard operational risks apply',
-    marketRisks: 'Market volatility and competition',
-    regulatoryRisks: 'Industry-specific regulations may apply',
-    esgConsiderations: 'ESG profile requires further research'
+    overview: 'This section would identify and analyze key risks facing the company, including financial, operational, market, and regulatory risks.',
+    financial: 'In a real report, this would detail financial risks such as debt levels, liquidity concerns, or currency exposure.',
+    operational: 'In a real report, this would cover operational risks such as supply chain vulnerabilities or production challenges.',
+    market: 'In a real report, this would address market risks such as changing consumer preferences or competitive pressures.',
+    regulatory: 'In a real report, this would outline regulatory risks such as pending legislation or compliance challenges.',
+    esgConsiderations: 'In a real report, this would analyze environmental, social, and governance factors that could impact the company.',
+    riskFactors: {
+      financial: [
+        'Demo risk factor 1',
+        'Demo risk factor 2',
+        'Demo risk factor 3'
+      ],
+      operational: [
+        'Demo risk factor 1',
+        'Demo risk factor 2',
+        'Demo risk factor 3'
+      ],
+      market: [
+        'Demo risk factor 1',
+        'Demo risk factor 2',
+        'Demo risk factor 3'
+      ],
+      regulatory: [
+        'Demo risk factor 1',
+        'Demo risk factor 2',
+        'Demo risk factor 3'
+      ],
+      esg: [
+        'Demo risk factor 1',
+        'Demo risk factor 2',
+        'Demo risk factor 3'
+      ]
+    },
+    riskRating: 'medium'
   },
   recentDevelopments: {
     news: [
       {
-        title: 'No recent significant news available',
-        description: 'Further research recommended for recent developments',
-        url: 'https://example.com',
-        publishedAt: new Date().toISOString(),
-        source: { name: 'Mock Data' },
-        date: new Date().toLocaleDateString()
+        title: 'Demo News Article 1',
+        date: '2025-10-15',
+        summary: 'This is a placeholder for a real news article. Subscribe to access actual recent news and analysis.',
+        url: '#'
+      },
+      {
+        title: 'Demo News Article 2',
+        date: '2025-10-10',
+        summary: 'This is a placeholder for a real news article. Subscribe to access actual recent news and analysis.'
+      },
+      {
+        title: 'Demo News Article 3',
+        date: '2025-10-05',
+        summary: 'This is a placeholder for a real news article. Subscribe to access actual recent news and analysis.'
       }
     ],
     filings: [
       {
-        type: 'N/A',
-        filingDate: 'N/A',
-        description: 'No recent filings data available',
-        url: 'https://example.com',
-        date: 'N/A'
+        type: 'Demo Filing',
+        date: '2025-09-30',
+        description: 'This is a placeholder for actual SEC filings. Subscribe to access real filing data and analysis.'
+      },
+      {
+        type: 'Demo Filing',
+        date: '2025-09-15',
+        description: 'This is a placeholder for actual SEC filings. Subscribe to access real filing data and analysis.'
       }
     ],
-    strategicInitiatives: [
-      'Data not available'
+    strategic: [
+      'This is a demo report with placeholder data',
+      'Real reports include actual strategic initiatives',
+      'Subscribe to access comprehensive analysis'
     ]
   },
-  companyData: {
-    Symbol: '',
-    AssetType: 'Common Stock',
-    Name: '',
-    Description: 'Company description not available',
-    Exchange: '',
-    Currency: 'USD',
-    Country: '',
-    Sector: '',
-    Industry: '',
-    MarketCapitalization: '0',
-    EBITDA: '0',
-    PERatio: '0',
-    PEGRatio: '0',
-    DividendYield: '0',
-    EPS: '0',
-    RevenuePerShareTTM: '0',
-    ProfitMargin: '0',
-    OperatingMarginTTM: '0',
-    ReturnOnAssetsTTM: '0',
-    ReturnOnEquityTTM: '0',
-    RevenueTTM: '0',
-    GrossProfitTTM: '0',
-    DilutedEPSTTM: '0',
-    QuarterlyEarningsGrowthYOY: '0',
-    QuarterlyRevenueGrowthYOY: '0',
-    AnalystTargetPrice: '0',
-    TrailingPE: '0',
-    ForwardPE: '0',
-    PriceToSalesRatioTTM: '0',
-    PriceToBookRatio: '0',
-    EVToRevenue: '0',
-    EVToEBITDA: '0',
-    Beta: '0',
-    WeekHigh52: '0',
-    WeekLow52: '0',
-    DayMovingAverage50: '0',
-    DayMovingAverage200: '0',
-    SharesOutstanding: '0',
-    SharesFloat: '0',
-    SharesShort: '0',
-    SharesShortPriorMonth: '0',
-    ShortRatio: '0',
-    ShortPercentOutstanding: '0',
-    ShortPercentFloat: '0',
-    PercentInsiders: '0',
-    PercentInstitutions: '0',
-    ForwardAnnualDividendRate: '0',
-    ForwardAnnualDividendYield: '0',
-    PayoutRatio: '0',
-    DividendDate: '',
-    ExDividendDate: '',
-    LastSplitFactor: '',
-    LastSplitDate: ''
+  conclusion: 'This is a demo report with placeholder data. Subscribe to access full reports with comprehensive analysis and actionable recommendations based on real data.',
+  generatedAt: new Date().toISOString()
+};
+
+// Generates a due diligence report using real data when possible, falling back to mock data when needed
+// @param companyName The name of the company to generate a report for
+// @param useRealData Whether to generate real-like data (for trial users) or demo data
+// @returns A due diligence report with real or mock data
+export const generateMockDueDiligenceReport = async (companyName: string, useRealData: boolean = false): Promise<DueDiligenceReportType> => {
+  // Simulate API delay for demo mode
+  if (!useRealData) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return {
+      ...defaultReport,
+      companyName: companyName,
+      timestamp: Date.now()
+    };
+  }
+  
+  // For real data mode, attempt to fetch actual data
+  try {
+    console.log(`Generating report for ${companyName} with real data`);
+    
+    // Normalize company name for lookup
+    const normalizedCompany = companyName.toLowerCase().trim();
+    
+    // Check if we have mock data for this company
+    if (normalizedCompany === 'apple') {
+      console.log(`Using enhanced mock data for ${companyName}`);
+      return {
+        ...mockAppleReport,
+        timestamp: Date.now()
+      };
+    } else if (normalizedCompany === 'microsoft') {
+      console.log(`Using enhanced mock data for ${companyName}`);
+      return {
+        ...mockMicrosoftReport,
+        timestamp: Date.now()
+      };
+    }
+    
+    // Try to determine ticker symbol
+    let ticker = companyName.substring(0, 4).toUpperCase();
+    if (companyName.includes('(') && companyName.includes(')')) {
+      // Extract ticker from format "Company Name (TICK)"
+      ticker = companyName.split('(')[1].split(')')[0].trim();
+    }
+    
+    // Attempt to fetch company data from Alpha Vantage
+    const companyData = await fetchCompanyOverview(ticker);
+    
+    if (companyData) {
+      console.log(`Successfully fetched company data for ${ticker}`);
+      
+      // Fetch news articles
+      const newsArticles = await fetchCompanyNews(companyName);
+      
+      // Fetch SEC filings
+      const secFilings = await fetchSECFilings(ticker);
+      
+      // Generate a report based on the real data
+      return {
+        companyName: companyData.Name || companyName,
+        ticker: companyData.Symbol || ticker,
+        timestamp: Date.now(),
+        companyData,
+        executiveSummary: {
+          overview: companyData.Description || `${companyName} is a company operating in the ${companyData.Industry || 'technology'} industry.`,
+          keyFindings: [
+            `Market capitalization of $${(companyData.MarketCapitalization / 1000000000).toFixed(2)} billion`,
+            `P/E ratio of ${companyData.PERatio.toFixed(2)}`,
+            `EPS of $${companyData.EPS.toFixed(2)}`,
+            `Profit margin of ${(companyData.ProfitMargin * 100).toFixed(2)}%`,
+            `Quarterly earnings growth YOY of ${(companyData.QuarterlyEarningsGrowthYOY * 100).toFixed(2)}%`
+          ],
+          riskRating: companyData.Beta > 1.5 ? 'High' : companyData.Beta > 1 ? 'Medium' : 'Low',
+          recommendation: `Based on our analysis, ${companyName} presents a ${companyData.Beta > 1.5 ? 'high-risk, high-reward' : companyData.Beta > 1 ? 'moderate' : 'conservative'} investment opportunity.`
+        },
+        financialAnalysis: {
+          overview: `${companyName} demonstrates ${companyData.QuarterlyEarningsGrowthYOY > 0 ? 'positive' : 'challenging'} financial performance with ${companyData.QuarterlyEarningsGrowthYOY > 0 ? 'growth' : 'decline'} in quarterly earnings.`,
+          metrics: {
+            'Revenue (TTM)': `$${(companyData.MarketCapitalization / 1000000000).toFixed(2)} billion`,
+            'Gross Margin': `${(companyData.ProfitMargin * 1.5 * 100).toFixed(2)}% (estimated)`,
+            'Operating Margin': `${(companyData.ProfitMargin * 1.2 * 100).toFixed(2)}% (estimated)`,
+            'Net Income': `$${(companyData.MarketCapitalization * companyData.ProfitMargin / 1000000000).toFixed(2)} billion (estimated)`,
+            'EPS (TTM)': `$${companyData.EPS.toFixed(2)}`,
+            'P/E Ratio': `${companyData.PERatio.toFixed(2)}`,
+            'Market Cap': `$${(companyData.MarketCapitalization / 1000000000).toFixed(2)} billion`,
+            'Cash & Equivalents': `$${(companyData.MarketCapitalization * 0.1 / 1000000000).toFixed(2)} billion (estimated)`
+          },
+          trends: `${companyName} has shown ${companyData.QuarterlyEarningsGrowthYOY > 0 ? 'positive' : 'negative'} earnings growth of ${(companyData.QuarterlyEarningsGrowthYOY * 100).toFixed(2)}% year-over-year, with revenue growth at ${(companyData.QuarterlyRevenueGrowthYOY * 100).toFixed(2)}%.`,
+          strengths: [
+            companyData.ProfitMargin > 0.2 ? 'Strong profit margins compared to industry peers' : 'Reasonable profit margins given industry conditions',
+            companyData.QuarterlyEarningsGrowthYOY > 0 ? 'Positive earnings growth trajectory' : 'Cost management initiatives in place to address earnings challenges',
+            companyData.DividendYield > 0.02 ? 'Attractive dividend yield for income investors' : 'Balanced approach to capital allocation',
+            companyData.PEGRatio < 1.5 ? 'Favorable PEG ratio indicating reasonable valuation relative to growth' : 'Ongoing investments in future growth opportunities'
+          ],
+          weaknesses: [
+            companyData.ProfitMargin < 0.15 ? 'Below-average profit margins compared to industry leaders' : 'Potential margin pressure from increasing competition',
+            companyData.QuarterlyEarningsGrowthYOY < 0 ? 'Recent earnings decline requiring management attention' : 'Potential growth deceleration in mature markets',
+            companyData.Beta > 1.2 ? 'Higher volatility than market average' : 'Limited exposure to high-growth emerging markets',
+            companyData.PERatio > 25 ? 'Relatively high valuation multiples' : 'Moderate growth expectations priced into current valuation'
+          ]
+        },
+        marketAnalysis: {
+          overview: `${companyName} operates in the ${companyData.Industry} industry within the ${companyData.Sector} sector, facing both opportunities and challenges in its competitive landscape.`,
+          position: `${companyName} holds a ${companyData.MarketCapitalization > 100000000000 ? 'significant' : 'moderate'} position in the ${companyData.Industry} market, with opportunities for ${companyData.QuarterlyRevenueGrowthYOY > 0.1 ? 'continued expansion' : 'stabilization and targeted growth'}.`,
+          competitors: getCompetitorsByIndustry(companyData.Industry),
+          swot: {
+            strengths: [
+              `Strong brand recognition in ${companyData.Industry}`,
+              companyData.ProfitMargin > 0.2 ? 'Industry-leading profit margins' : 'Established market presence',
+              companyData.QuarterlyEarningsGrowthYOY > 0.1 ? 'Exceptional recent growth performance' : 'Stable business model'
+            ],
+            weaknesses: [
+              companyData.Beta > 1.5 ? 'Higher volatility than industry average' : 'Moderate competitive pressures',
+              companyData.QuarterlyEarningsGrowthYOY < 0 ? 'Recent performance challenges' : 'Ongoing need for innovation to maintain position',
+              companyData.PERatio > 30 ? 'Premium valuation requiring consistent execution' : 'Market expectations aligned with historical performance'
+            ],
+            opportunities: [
+              `Expansion in ${companyData.Sector} adjacent markets`,
+              'Digital transformation initiatives',
+              'Strategic partnerships',
+              'Product innovation and diversification'
+            ],
+            threats: [
+              'Increasing competition from established players',
+              'New market entrants',
+              'Margin pressure',
+              'Changing customer preferences'
+            ]
+          }
+        },
+        riskAssessment: {
+          overview: `${companyName} faces several key risks that could impact its business performance and market position.`,
+          financial: `Financial risks include ${companyData.Beta > 1.5 ? 'higher than average market volatility' : 'moderate market sensitivity'}, with a beta of ${companyData.Beta.toFixed(2)}.`,
+          operational: `Operational risks include typical challenges in the ${companyData.Industry} industry, including supply chain management, talent acquisition, and technology infrastructure.`,
+          market: `Market risks stem from competitive pressures in the ${companyData.Industry} space, with potential for disruption from new entrants and changing customer preferences.`,
+          regulatory: `Regulatory risks include industry-specific compliance requirements, potential policy changes affecting the ${companyData.Sector} sector, and evolving standards.`,
+          esgConsiderations: 'Environmental, social, and governance factors are increasingly important to investors and customers, requiring ongoing attention and transparent reporting.',
+          riskFactors: {
+            financial: [
+              companyData.Beta > 1.5 ? 'High market volatility' : 'Moderate market sensitivity',
+              'Currency exchange exposure in international markets',
+              companyData.DividendYield > 0 ? 'Dividend sustainability considerations' : 'Capital allocation priorities'
+            ],
+            operational: [
+              'Supply chain resilience',
+              'Talent acquisition and retention',
+              'Technology infrastructure and cybersecurity',
+              'Intellectual property protection'
+            ],
+            market: [
+              'Competitive pressure from established players',
+              'Emerging market entrants with disruptive models',
+              'Shifting customer preferences and expectations',
+              'Product lifecycle management'
+            ],
+            regulatory: [
+              `${companyData.Sector}-specific regulations`,
+              'Data privacy and protection requirements',
+              'International trade policies',
+              'Environmental compliance standards'
+            ],
+            esg: [
+              'Carbon footprint reduction initiatives',
+              'Diversity and inclusion practices',
+              'Corporate governance standards',
+              'Supply chain sustainability'
+            ]
+          },
+          riskRating: companyData.Beta > 1.5 ? 'high' : companyData.Beta > 1 ? 'medium' : 'low'
+        },
+        recentDevelopments: {
+          news: newsArticles.length > 0 ? newsArticles : [
+            {
+              title: `${companyName} Reports Q1 2025 Financial Results`,
+              date: '2025-03-15',
+              summary: `${companyName} announced quarterly results with revenue of $${(companyData.MarketCapitalization * 0.05 / 1000000000).toFixed(2)} billion, representing a ${(companyData.QuarterlyRevenueGrowthYOY * 100).toFixed(1)}% increase year-over-year.`
+            },
+            {
+              title: `${companyName} Expands Product Portfolio`,
+              date: '2025-02-28',
+              summary: `${companyName} unveiled its newest product line aimed at expanding its presence in the growing ${companyData.Industry} market segment.`
+            },
+            {
+              title: `${companyName} Announces Strategic Partnership`,
+              date: '2025-02-10',
+              summary: `${companyName} announced a strategic partnership to enhance its capabilities in emerging technologies and expand market reach.`
+            }
+          ],
+          filings: secFilings.length > 0 ? secFilings : [
+            {
+              type: '10-Q',
+              date: '2025-03-15',
+              description: `Quarterly report detailing ${companyName}'s financial performance for Q1 2025.`
+            },
+            {
+              type: '8-K',
+              date: '2025-02-10',
+              description: `Current report announcing strategic partnership for ${companyName}.`
+            }
+          ],
+          strategic: [
+            `Expansion in ${companyData.Industry} core markets`,
+            'Digital transformation initiatives',
+            'Sustainability and ESG program development',
+            'Strategic partnerships and potential acquisitions'
+          ]
+        },
+        conclusion: `${companyName} (${companyData.Symbol}) presents a ${companyData.Beta > 1.5 ? 'high-risk, high-potential' : companyData.Beta > 1 ? 'moderate' : 'conservative'} investment opportunity within the ${companyData.Industry} industry. With a market capitalization of $${(companyData.MarketCapitalization / 1000000000).toFixed(2)} billion and a P/E ratio of ${companyData.PERatio.toFixed(2)}, the company ${companyData.QuarterlyEarningsGrowthYOY > 0 ? 'demonstrates positive growth trends' : 'faces some growth challenges'} that investors should monitor closely. Key considerations include ${companyData.QuarterlyEarningsGrowthYOY > 0 ? 'strong recent performance' : 'ongoing transformation efforts'}, competitive positioning, and ${companyData.Beta > 1.5 ? 'higher volatility' : 'market sensitivity'} reflected in its beta of ${companyData.Beta.toFixed(2)}. Investors should conduct further research on recent developments and industry trends before making investment decisions.`,
+        generatedAt: new Date().toISOString()
+      };
+    } else {
+      console.log(`Could not fetch company data for ${ticker}, using generated data`);
+    }
+    
+    // If we couldn't get real data, generate a more realistic report with mock data
+    const generatedReport: DueDiligenceReportType = {
+      companyName: companyName,
+      ticker: ticker,
+      timestamp: Date.now(),
+      companyData: {
+        Symbol: ticker,
+        AssetType: 'Common Stock',
+        Name: companyName,
+        Description: `${companyName} is a company operating in its industry with various products and services.`,
+        Exchange: 'NASDAQ',
+        Currency: 'USD',
+        Country: 'USA',
+        Sector: 'Technology',
+        Industry: 'Software',
+        MarketCapitalization: 15000000000,
+        EBITDA: 3000000000,
+        PERatio: 22.5,
+        PEGRatio: 1.8,
+        BookValue: 12.5,
+        DividendPerShare: 0.8,
+        DividendYield: 0.015,
+        EPS: 2.35,
+        ProfitMargin: 0.18,
+        QuarterlyEarningsGrowthYOY: 0.12,
+        QuarterlyRevenueGrowthYOY: 0.09,
+        AnalystTargetPrice: 125.50,
+        TrailingPE: 22.5,
+        ForwardPE: 20.8,
+        PriceToSalesRatioTTM: 5.2,
+        PriceToBookRatio: 8.5,
+        EVToRevenue: 5.5,
+        EVToEBITDA: 18.2,
+        Beta: 1.15,
+        '52WeekHigh': 130.75,
+        '52WeekLow': 85.25,
+        '50DayMovingAverage': 110.42,
+        '200DayMovingAverage': 105.67,
+        SharesOutstanding: 285000000,
+        DividendDate: '2025-03-15',
+        ExDividendDate: '2025-02-28'
+      },
+      executiveSummary: {
+        overview: `${companyName} is a company operating in its industry with various products and services.`,
+        keyFindings: [
+          `${companyName} has shown moderate financial performance in recent quarters`,
+          'The company faces both opportunities and challenges in its market',
+          'Competitive pressures remain a concern for future growth',
+          'Financial position appears stable but with areas for improvement',
+          'Recent strategic initiatives may impact future performance'
+        ],
+        riskRating: 'Medium',
+        recommendation: `${companyName} presents a moderate investment opportunity with both potential upside and notable risks.`
+      },
+      financialAnalysis: {
+        overview: `${companyName} demonstrates mixed financial performance with some strengths and areas for improvement.`,
+        metrics: {
+          'Revenue (TTM)': '$3.25 billion',
+          'Gross Margin': '48.5%',
+          'Operating Margin': '22.3%',
+          'Net Income': '$0.58 billion',
+          'EPS (TTM)': '$2.35',
+          'P/E Ratio': '22.5',
+          'Market Cap': '$15.0 billion',
+          'Cash & Equivalents': '$1.85 billion'
+        },
+        trends: `${companyName} has shown variable revenue growth over recent periods, with some quarters outperforming expectations and others falling short.`,
+        strengths: [
+          'Reasonable cash position providing operational flexibility',
+          'Stable gross margins compared to industry average',
+          'Manageable debt levels',
+          'Consistent dividend payments to shareholders'
+        ],
+        weaknesses: [
+          'Inconsistent revenue growth quarter-to-quarter',
+          'Operating expenses growing faster than revenue',
+          'Below-industry-average return on invested capital',
+          'Cash flow volatility affecting investment capacity'
+        ]
+      },
+      marketAnalysis: {
+        overview: `${companyName} operates in a competitive market environment with moderate market share in its primary segments.`,
+        position: 'Mid-tier market position with opportunities for expansion in select segments.',
+        competitors: getCompetitorsByIndustry('Software'),
+        swot: {
+          strengths: [
+            'Established brand in core markets',
+            'Loyal customer base',
+            'Product quality reputation'
+          ],
+          weaknesses: [
+            'Limited market share in growth segments',
+            'Higher cost structure than some competitors'
+          ],
+          opportunities: [
+            'Expansion into adjacent markets',
+            'Digital transformation initiatives',
+            'Strategic partnerships',
+            'Product innovation'
+          ],
+          threats: [
+            'Increasing competition from established players',
+            'New market entrants',
+            'Margin pressure',
+            'Changing customer preferences'
+          ]
+        }
+      },
+      riskAssessment: {
+        overview: `${companyName} faces several key risks that could impact its business performance and market position.`,
+        financial: 'Moderate financial risks related to variable cash flow, debt servicing requirements, and potential margin pressure.',
+        operational: 'Operational risks include supply chain dependencies, production capacity constraints, and workforce challenges.',
+        market: 'Market risks stem from competitive pressures, changing customer preferences, and potential disruptive technologies.',
+        regulatory: 'Regulatory risks include industry-specific compliance requirements, potential policy changes affecting the sector, and evolving standards.',
+        esgConsiderations: 'Environmental, social, and governance factors are increasingly important to investors and customers, requiring ongoing attention and transparent reporting.',
+        riskFactors: {
+          financial: [
+            'Cash flow volatility',
+            'Debt covenant compliance',
+            'Currency exchange exposure'
+          ],
+          operational: [
+            'Supply chain disruptions',
+            'Production capacity limitations',
+            'Talent acquisition and retention'
+          ],
+          market: [
+            'Increasing competitive pressure',
+            'Changing customer preferences',
+            'Technology disruption'
+          ],
+          regulatory: [
+            'Industry-specific regulations',
+            'Data privacy requirements',
+            'Environmental compliance'
+          ],
+          esg: [
+            'Carbon footprint reduction',
+            'Diversity and inclusion initiatives',
+            'Supply chain sustainability'
+          ]
+        },
+        riskRating: 'medium'
+      },
+      recentDevelopments: {
+        news: [
+          {
+            title: `${companyName} Reports Q1 2025 Financial Results`,
+            date: '2025-03-15',
+            summary: `${companyName} reported quarterly results with revenue of $825 million, representing a 9% increase year-over-year.`,
+          },
+          {
+            title: `${companyName} Launches New Product Line`,
+            date: '2025-02-28',
+            summary: `${companyName} unveiled its newest product line aimed at expanding its presence in the growing market segment.`,
+          },
+          {
+            title: `${companyName} Announces Leadership Changes`,
+            date: '2025-02-10',
+            summary: `${companyName} announced the appointment of a new CTO to lead its technology innovation efforts.`,
+          }
+        ],
+        filings: [
+          {
+            type: '10-Q',
+            date: '2025-03-15',
+            description: `Quarterly report detailing ${companyName}'s financial performance for Q1 2025.`,
+          },
+          {
+            type: '8-K',
+            date: '2025-02-10',
+            description: `Current report announcing executive leadership changes at ${companyName}.`,
+          }
+        ],
+        strategic: [
+          'Expansion into adjacent markets',
+          'Digital transformation initiatives',
+          'Product portfolio diversification',
+          'Strategic partnerships and acquisitions'
+        ]
+      },
+      conclusion: `${companyName} presents a moderate investment opportunity with both potential upside and notable risks. The company's financial position appears stable, but investors should monitor competitive pressures and execution of strategic initiatives. Recent developments suggest management is taking steps to address challenges and position for future growth, but results may take time to materialize. A thorough assessment of the company's competitive position and industry trends is recommended before making investment decisions.`,
+      generatedAt: new Date().toISOString()
+    };
+    
+    return generatedReport;
+  } catch (error) {
+    console.error('Error generating report with real data:', error);
+    
+    // Fallback to basic mock data
+    return {
+      ...defaultReport,
+      companyName: companyName,
+      timestamp: Date.now(),
+      companyData: {
+        Symbol: companyName.substring(0, 4).toUpperCase(),
+        AssetType: 'Common Stock',
+        Name: companyName,
+        Description: `${companyName} is a company operating in its industry with various products and services.`,
+        Exchange: 'NASDAQ',
+        Currency: 'USD',
+        Country: 'USA',
+        Sector: 'Technology',
+        Industry: 'Software',
+        MarketCapitalization: 10000000000,
+        EBITDA: 2000000000,
+        PERatio: 20,
+        PEGRatio: 1.5,
+        BookValue: 10,
+        DividendPerShare: 0.5,
+        DividendYield: 0.01,
+        EPS: 2,
+        ProfitMargin: 0.15,
+        QuarterlyEarningsGrowthYOY: 0.1,
+        QuarterlyRevenueGrowthYOY: 0.08,
+        AnalystTargetPrice: 100,
+        TrailingPE: 20,
+        ForwardPE: 18,
+        PriceToSalesRatioTTM: 5,
+        PriceToBookRatio: 8,
+        EVToRevenue: 5,
+        EVToEBITDA: 15,
+        Beta: 1.2,
+        '52WeekHigh': 120,
+        '52WeekLow': 80,
+        '50DayMovingAverage': 100,
+        '200DayMovingAverage': 95,
+        SharesOutstanding: 250000000,
+        DividendDate: '2025-03-15',
+        ExDividendDate: '2025-02-28'
+      }
+    };
   }
 };
 
 /**
- * Generates a mock due diligence report for testing and demo purposes
+ * Generates a due diligence report for a company
  * @param companyName The name of the company to generate a report for
- * @returns A mock due diligence report
+ * @param options Options for the report generation
+ * @returns A promise that resolves to a due diligence report
  */
-export async function generateMockDueDiligenceReport(companyName: string): Promise<DueDiligenceReportType> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  // Return mock data based on company name
-  return {
-    companyName: companyName,
-    timestamp: new Date().toISOString(),
-    executiveSummary: {
-      overview: `${companyName} is a leading company in its industry with strong financial performance and market position. The company has shown consistent growth over the past years and maintains a competitive edge through innovation and strategic partnerships.`,
-      keyFindings: [
-        `${companyName} has demonstrated strong revenue growth of approximately 15% year-over-year`,
-        "Healthy profit margins compared to industry averages",
-        "Solid balance sheet with manageable debt levels",
-        "Expanding market share in key regions",
-        "Potential regulatory challenges in emerging markets"
-      ],
-      riskRating: "Medium",
-      recommendation: "Consider investment with moderate position sizing due to current market conditions"
+export const generateDueDiligenceReport = async (
+  companyName: string,
+  options: ReportOptions = {}
+): Promise<DueDiligenceReportType> => {
+  // Default options
+  const defaultOptions: ReportOptions = {
+    sections: {
+      includeFinancial: true,
+      includeMarket: true,
+      includeRisk: true,
+      includeRecent: true
     },
-    financialAnalysis: {
-      metrics: {
-        "Revenue Growth": "+15.2%",
-        "Profit Margin": "22.4%",
-        "Debt-to-Equity": "0.42",
-        "Current Ratio": "2.1",
-        "Return on Equity": "18.7%",
-        "P/E Ratio": "24.3"
-      },
-      trends: [
-        "Consistent revenue growth over the past 5 years",
-        "Improving profit margins due to operational efficiencies",
-        "Increasing R&D investment as percentage of revenue",
-        "Stable dividend payments with moderate growth"
-      ],
-      strengths: [
-        "Strong cash flow generation",
-        "Diversified revenue streams",
-        "Effective cost management",
-        "Strategic acquisition strategy"
-      ],
-      weaknesses: [
-        "Exposure to currency fluctuations",
-        "Increasing competition in core markets",
-        "Rising raw material costs",
-        "Dependence on key suppliers"
-      ]
-    },
-    marketAnalysis: {
-      position: `${companyName} holds approximately 18% market share in its primary industry, positioning it among the top three competitors. The company has been gaining market share through product innovation and strategic expansions into emerging markets.`,
-      competitors: [
-        "Industry Leader Corp",
-        "Global Competitor Inc",
-        "Emerging Rival Ltd",
-        "Regional Player Co"
-      ],
-      marketShare: "18%",
-      swot: {
-        strengths: [
-          "Strong brand recognition",
-          "Innovative product pipeline",
-          "Robust distribution network",
-          "Customer loyalty programs"
-        ],
-        weaknesses: [
-          "Limited presence in some emerging markets",
-          "Product portfolio gaps in certain segments",
-          "Higher cost structure than some competitors",
-          "Aging infrastructure in some facilities"
-        ],
-        opportunities: [
-          "Expansion into untapped markets",
-          "Growing demand for premium products",
-          "Strategic partnerships with tech companies",
-          "E-commerce channel development"
-        ],
-        threats: [
-          "Increasing regulatory scrutiny",
-          "Disruptive technologies",
-          "New market entrants",
-          "Economic slowdown in key markets"
-        ]
-      }
-    },
-    riskAssessment: {
-      financial: [
-        "Currency exchange rate volatility",
-        "Interest rate fluctuations affecting debt servicing",
-        "Potential goodwill impairment from past acquisitions",
-        "Pension fund obligations"
-      ],
-      operational: [
-        "Supply chain disruptions",
-        "Cybersecurity threats",
-        "Key personnel retention",
-        "Manufacturing capacity constraints"
-      ],
-      market: [
-        "Shifting consumer preferences",
-        "Price competition in core markets",
-        "Market saturation in developed regions",
-        "Substitute products gaining traction"
-      ],
-      regulatory: [
-        "Changing environmental regulations",
-        "Data privacy compliance challenges",
-        "Antitrust considerations in key markets",
-        "Import/export restrictions"
-      ],
-      esg: [
-        "Carbon footprint reduction targets",
-        "Supply chain sustainability concerns",
-        "Diversity and inclusion initiatives",
-        "Corporate governance structure"
-      ]
-    },
-    recentDevelopments: {
-      news: [
-        {
-          title: `${companyName} Announces Expansion into Asian Markets`,
-          url: "#",
-          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          source: { name: "Business News Daily" }
-        },
-        {
-          title: `${companyName} Reports Strong Q2 Earnings`,
-          url: "#",
-          date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          source: { name: "Financial Times" }
-        },
-        {
-          title: `${companyName} Launches New Product Line`,
-          url: "#",
-          date: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-          source: { name: "Industry Today" }
-        }
-      ],
-      filings: [
-        {
-          type: "10-Q",
-          date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-          description: "Quarterly Report",
-          url: "#"
-        },
-        {
-          type: "8-K",
-          date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-          description: "Material Event",
-          url: "#"
-        }
-      ],
-      management: [
-        "New Chief Technology Officer appointed",
-        "Restructuring of sales organization",
-        "Board of Directors expanded with industry experts"
-      ],
-      strategic: [
-        "Five-year growth strategy announced",
-        "Digital transformation initiative launched",
-        "Sustainability goals established",
-        "R&D investment increased by 20%"
-      ]
+    format: {
+      includeCharts: true,
+      includeTables: true
     }
   };
-} 
+
+  // Merge options with defaults
+  const mergedOptions: ReportOptions = {
+    sections: {
+      ...defaultOptions.sections,
+      ...options.sections
+    },
+    format: {
+      ...defaultOptions.format,
+      ...options.format
+    }
+  };
+
+  console.log('Generating report for', companyName, 'with options:', mergedOptions);
+
+  try {
+    // Generate the report using the mock API
+    const report = await generateMockDueDiligenceReport(companyName, true);
+
+    // Apply section filters based on options
+    if (!mergedOptions.sections?.includeFinancial) {
+      report.financialAnalysis = undefined;
+    }
+
+    if (!mergedOptions.sections?.includeMarket) {
+      report.marketAnalysis = undefined;
+    }
+
+    if (!mergedOptions.sections?.includeRisk) {
+      report.riskAssessment = undefined;
+    }
+
+    if (!mergedOptions.sections?.includeRecent) {
+      report.recentDevelopments = undefined;
+    }
+
+    // Format options are passed to the SimpleReportDisplay component
+    // and don't affect the report data structure
+
+    return report;
+  } catch (error) {
+    console.error('Error generating report:', error);
+    throw new Error('Failed to generate due diligence report');
+  }
+};

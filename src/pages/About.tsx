@@ -24,22 +24,22 @@ const values = [
 
 const team = [
   {
-    name: 'John Smith',
+    name: 'Alex Rivera',
     role: 'CEO & Founder',
-    bio: 'Former investment banker with 15+ years of experience in due diligence.',
-    image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
+    bio: 'Former financial analyst with expertise in investment evaluation and 10+ years experience in the fintech industry.',
+    image: '/assets/team/alex-rivera.jpg'
   },
   {
-    name: 'Sarah Johnson',
+    name: 'Priya Sharma',
     role: 'CTO',
-    bio: 'AI and machine learning expert with a PhD in Computer Science.',
-    image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
+    bio: 'AI researcher with a PhD in Machine Learning from Stanford and previous experience at leading AI research labs.',
+    image: '/assets/team/priya-sharma.jpg'
   },
   {
-    name: 'Michael Chen',
+    name: 'David Chen',
     role: 'Head of Research',
-    bio: 'Financial analyst with expertise in market research and data analysis.',
-    image: 'https://images.unsplash.com/photo-1519244703995-f4e0f30006d5?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80'
+    bio: 'Financial data scientist with expertise in quantitative analysis and predictive modeling for investment decisions.',
+    image: '/assets/team/david-chen.jpg'
   }
 ];
 
@@ -83,7 +83,7 @@ export const About = () => {
               <div className="relative">
                 <div className="aspect-w-16 aspect-h-9 rounded-lg overflow-hidden shadow-md">
                   <img
-                    src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"
+                    src="/assets/images/team-collaboration.jpg"
                     alt="Team collaboration"
                     className="object-cover w-full h-full"
                   />
@@ -139,6 +139,10 @@ export const About = () => {
                       src={member.image}
                       alt={member.name}
                       className="w-full h-full object-cover transition-transform hover:scale-105 duration-300"
+                      onError={(e) => {
+                        // Fallback image if the team member image doesn't exist
+                        e.currentTarget.src = `/assets/images/placeholder-profile.jpg`;
+                      }}
                     />
                   </div>
                   <CardContent className="p-6">
@@ -171,4 +175,4 @@ export const About = () => {
       </div>
     </>
   );
-}; 
+};
