@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuthService, handleAuthError } from '../../services/auth';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,36 +11,24 @@ const ForgotPassword = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const authService = getAuthService();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
     try {
-      const auth = getAuth();
-      await sendPasswordResetEmail(auth, email);
+      await authService.sendPasswordResetEmail(email);
       setEmailSent(true);
       toast.success("Reset email sent", {
         description: "Check your inbox for password reset instructions"
       });
-    } catch (error: any) {
-      console.error("Password reset error:", error);
-      let errorMessage = "Failed to send reset email";
-      
-      switch (error.code) {
-        case 'auth/invalid-email':
-          errorMessage = "Invalid email address";
-          break;
-        case 'auth/user-not-found':
-          errorMessage = "No account found with this email";
-          break;
-        default:
-          errorMessage = error.message;
-      }
-      
+    } catch (error) {
+      const authError = handleAuthError(error);
       toast.error("Reset email failed", {
-        description: errorMessage
+        description: authError.message
       });
+      console.error("Password reset error:", authError);
     } finally {
       setLoading(false);
     }

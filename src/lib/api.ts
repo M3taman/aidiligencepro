@@ -2,8 +2,12 @@ import { DueDiligenceResponse } from '@/types/due-diligence';
 
 const API_ENDPOINTS = {
   generateText: 'https://generatetext-toafsgw4rq-uc.a.run.app',
-  generateDueDiligence: 'https://generateduediligence-toafsgw4rq-uc.a.run.app',
-  aiml: 'https://api.aiml.com/v1/chat/completions' // AIML API endpoint
+  generateDueDiligence: process.env.NODE_ENV === 'production' 
+    ? 'https://generateduediligence-toafsgw4rq-uc.a.run.app'
+    : 'http://localhost:5001/ai-diligence/us-central1/apiProxy',
+  aiml: process.env.NODE_ENV === 'production' 
+    ? 'https://api.aiml.com/v1/chat/completions' 
+    : 'http://localhost:5001/ai-diligence/us-central1/apiProxy'
 };
 
 // AIML API key - should be stored in environment variables in production
@@ -68,6 +72,55 @@ export async function generateText(prompt: string): Promise<{ data: string; mode
   } catch (error) {
     if (error instanceof APIError) throw error;
     throw new APIError('Failed to generate text');
+  }
+}
+
+// Alpha Vantage API key - should be stored in environment variables
+const ALPHA_VANTAGE_API_KEY = import.meta.env.VITE_ALPHA_VANTAGE_API_KEY || 'demo';
+
+export async function getAlphaVantageData(symbol: string) {
+  try {
+    const response = await fetch(
+      `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`
+    );
+    const data = await response.json();
+    
+    if (data.Note || data.Information) {
+      throw new APIError(data.Note || data.Information);
+    }
+
+    return {
+      peRatio: data.PERatio,
+      pbRatio: data.PriceToBookRatio,
+      eps: data.EPS,
+      dividendYield: data.DividendYield,
+      profitMargin: data.ProfitMargin,
+      roe: data.ReturnOnEquityTTM
+    };
+  } catch (error) {
+    console.error('Alpha Vantage error:', error);
+    throw new APIError('Failed to fetch financial data');
+  }
+}
+
+export async function fetchSECFilings(ticker: string): Promise<Array<{url: string, type: string}>> {
+  try {
+    const response = await fetch(
+      `https://data.sec.gov/submissions/CIK${ticker}.json`
+    );
+    const data = await response.json();
+    
+    if (!data.filings || !data.filings.recent) {
+      throw new APIError('No filings found for this company');
+    }
+
+    return data.filings.recent.primaryDocUrl.map((url: string, i: number) => ({
+      url: `https://www.sec.gov/Archives/${url}`,
+      type: data.filings.recent.form[i]
+    }));
+  } catch (error) {
+    console.error('SEC filings error:', error);
+    throw new APIError('Failed to fetch SEC filings');
   }
 }
 

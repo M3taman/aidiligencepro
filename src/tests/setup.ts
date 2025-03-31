@@ -17,24 +17,44 @@ vi.mock('firebase/auth', () => ({
   sendPasswordResetEmail: vi.fn(),
 }));
 
-vi.mock('firebase/firestore', () => ({
-  getFirestore: vi.fn(),
-  collection: vi.fn(),
-  doc: vi.fn(),
-  getDoc: vi.fn(),
-  getDocs: vi.fn(),
-  query: vi.fn(),
-  where: vi.fn(),
-  orderBy: vi.fn(),
-  addDoc: vi.fn(),
-  updateDoc: vi.fn(),
-  deleteDoc: vi.fn(),
-  Timestamp: {
-    now: vi.fn(),
-    fromDate: vi.fn(),
-    toDate: vi.fn(),
-  },
-}));
+// --- Commenting out Firestore mock in src/tests/setup.ts ---
+// // Simplified synchronous mock factory (matching src/test/setup.ts)
+// vi.mock('firebase/firestore', () => ({
+//   // Ensure getFirestore is explicitly mocked and exported
+//   getFirestore: vi.fn(() => {
+//     // console.log('Mock getFirestore called'); // Debugging
+//     return {}; // Return a simple object
+//   }),
+//   // Ensure enableIndexedDbPersistence is explicitly mocked and exported
+//   enableIndexedDbPersistence: vi.fn(() => {
+//     // console.log('Mock enableIndexedDbPersistence called'); // Debugging
+//     return Promise.resolve(); // Return a resolved promise
+//   }),
+//   // Mock other functions used by the tests
+//   collection: vi.fn(),
+//   doc: vi.fn((...args) => {
+//       // console.log('Mock doc called with:', args); // Debugging
+//       return { id: 'mock-doc-id', path: 'mock/path' }; // Return a basic mock doc ref
+//   }),
+//   setDoc: vi.fn(() => Promise.resolve()),
+//   getDoc: vi.fn(() => Promise.resolve({ exists: () => false, data: () => undefined })), // Default mock for getDoc
+//   getDocs: vi.fn(() => Promise.resolve({ empty: true, docs: [], size: 0 })), // Default mock for getDocs
+//   query: vi.fn(),
+//   where: vi.fn(),
+//   orderBy: vi.fn(),
+//   limit: vi.fn(),
+//   addDoc: vi.fn(), // Added addDoc
+//   updateDoc: vi.fn(), // Added updateDoc
+//   deleteDoc: vi.fn(), // Added deleteDoc
+//   // Mock Timestamp if necessary (using basic structure)
+//   Timestamp: {
+//     now: vi.fn(() => ({ seconds: Date.now() / 1000, nanoseconds: 0 })),
+//     fromDate: vi.fn((date: Date) => ({ seconds: date.getTime() / 1000, nanoseconds: 0 })),
+//     toDate: vi.fn((ts: { seconds: number }) => new Date(ts.seconds * 1000)),
+//   }
+// }));
+// --- End Commenting out ---
+
 
 // Mock Sentry
 vi.mock('@sentry/react', () => ({
@@ -50,7 +70,8 @@ vi.mock('react-router-dom', async () => {
   return {
     ...actual,
     useNavigate: () => vi.fn(),
-    useParams: () => ({}),
+    // Provide a default reportId for useParams used in ReportDetailPage
+    useParams: () => ({ reportId: 'test-report-id' }),
     useLocation: () => ({ pathname: '/' }),
   };
 });
@@ -76,4 +97,4 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
-})); 
+}));

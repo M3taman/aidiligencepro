@@ -50,33 +50,30 @@ export const setupAdminAccount = async () => {
     await signInWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_PASSWORD);
     console.log('Admin signed in successfully');
     isAuthenticated = true;
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error checking admin account:', error);
     
-    // If the error is that the user doesn't exist, create the account
-    if (error.code === 'auth/user-not-found') {
-      try {
-        await createUserWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_PASSWORD);
-        console.log('Admin account created successfully');
-        isAuthenticated = true;
-      } catch (createError: any) {
-        console.error('Error creating admin account:', createError);
-      }
-    }
-  }
-  
-  // If we still don't have authentication, try anonymous sign-in as a fallback
-  if (!isAuthenticated && import.meta.env.MODE === 'development') {
+    // If sign-in fails, try to create the account
     try {
-      // Only try anonymous sign-in in development mode
-      await signInAnonymously(auth);
-      console.log('Signed in anonymously for testing');
+      await createUserWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_PASSWORD);
+      console.log('Admin account created successfully');
       isAuthenticated = true;
-    } catch (anonError: any) {
-      console.error('Anonymous sign-in failed:', anonError);
+    } catch (createError) {
+      console.error('Error creating admin account:', createError);
       
-      // If anonymous sign-in fails, we'll proceed without authentication
-      // The app will handle unauthenticated states appropriately
+      // Finally, try anonymous sign-in as a last resort
+      try {
+        // Only attempt anonymous sign-in in development or when explicitly enabled
+        if (import.meta.env.MODE === 'development' || !import.meta.env.PROD || import.meta.env.VITE_ALLOW_ANONYMOUS === 'true') {
+          await signInAnonymously(auth);
+          console.log('Signed in anonymously for testing');
+          isAuthenticated = true;
+        } else {
+          console.log('Anonymous sign-in not allowed in production');
+        }
+      } catch (anonError) {
+        console.error('Anonymous sign-in failed:', anonError);
+      }
     }
   }
   

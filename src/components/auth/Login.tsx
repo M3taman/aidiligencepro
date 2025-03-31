@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import app, { auth } from '../../firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuthService, handleAuthError } from '../../services/auth';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,44 +11,24 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const authService = getAuthService();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await authService.signIn(email, password);
       toast.success("Login successful", {
         description: "Welcome back!"
       });
       navigate('/profile');
-    } catch (error: any) {
-      console.error("Login error:", error);
-      let errorMessage = "Login failed";
-      
-      switch (error.code) {
-        case 'auth/invalid-email':
-          errorMessage = "Invalid email address";
-          break;
-        case 'auth/user-disabled':
-          errorMessage = "This account has been disabled";
-          break;
-        case 'auth/user-not-found':
-          errorMessage = "No account found with this email";
-          break;
-        case 'auth/wrong-password':
-          errorMessage = "Incorrect password";
-          break;
-        case 'auth/invalid-credential':
-          errorMessage = "Invalid email or password";
-          break;
-        default:
-          errorMessage = error.message;
-      }
-      
+    } catch (error) {
+      const authError = handleAuthError(error);
       toast.error("Login failed", {
-        description: errorMessage
+        description: authError.message
       });
+      console.error("Login error:", authError);
     } finally {
       setLoading(false);
     }

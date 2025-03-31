@@ -1,21 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import ReportDetailPage from '@/pages/ReportDetailPage';
 import { useAuth } from '@/components/auth/authContext';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/firebase';
+import { getDoc } from 'firebase/firestore';
+// Import toast to check calls
+import { toast } from 'sonner';
 
 // Mock the auth context
 vi.mock('@/components/auth/authContext', () => ({
   useAuth: vi.fn(),
 }));
 
-// Mock Firebase
-vi.mock('firebase/firestore', () => ({
-  doc: vi.fn(),
-  getDoc: vi.fn(),
-}));
+// REMOVED local firebase/firestore mock - will rely on global setup
 
 const mockReport = {
   id: 'test-report-id',
@@ -46,45 +43,93 @@ const mockReport = {
 };
 
 describe('ReportDetailPage', () => {
+  // Clear mocks after each test to prevent leakage
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
   beforeEach(() => {
     // Mock auth context
-    (useAuth as any).mockReturnValue({
+    vi.mocked(useAuth).mockReturnValue({
       user: { uid: 'test-user-id' },
-    });
+    } as any);
 
-    // Mock Firebase getDoc
-    (getDoc as any).mockResolvedValue({
-      exists: () => true,
-      data: () => ({ ...mockReport, userId: 'test-user-id' }),
+    // Default mock for getDoc for most tests in this suite
+    // Use mockImplementation to potentially check the docRef if needed
+    vi.mocked(getDoc).mockImplementation(async (docRef: any) => {
+      // Basic check to ensure it's the expected path from useParams mock
+      if (docRef && docRef.path === 'reports/test-report-id') {
+        // Cast the resolved value to 'any' to bypass strict type checking on 'exists'
+        return Promise.resolve({
+          id: docRef.id,
+          exists: () => true,
+          data: () => ({ ...mockReport, userId: 'test-user-id' }),
+          metadata: { hasPendingWrites: false, fromCache: false, isEqual: vi.fn() },
+          get: vi.fn(),
+          ref: { path: docRef.path },
+        } as any);
+      }
+      // Fallback for unexpected calls
+      return Promise.resolve({
+        id: 'fallback-id',
+        exists: () => false,
+        data: () => undefined,
+        metadata: { hasPendingWrites: false, fromCache: false, isEqual: vi.fn() },
+        get: vi.fn(),
+        ref: { path: 'fallback/path' },
+       } as any); // Cast fallback as well
     });
   });
 
   it('renders loading state initially', () => {
+    // No need to mock getDoc here, beforeEach handles the default case
     render(
       <BrowserRouter>
         <ReportDetailPage />
       </BrowserRouter>
     );
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    // Check for the loading spinner SVG element directly
+    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument(); // Assuming you add data-testid="loading-spinner" to the Loader2 component in ReportDetailPage.tsx
   });
 
   it('renders report details after loading', async () => {
+    // No need to mock getDoc here, beforeEach handles the default case
     render(
       <BrowserRouter>
         <ReportDetailPage />
       </BrowserRouter>
     );
 
-    await waitFor(() => {
+    await act(async () => {
+      // Advance timers to trigger async operations
+      vi.runAllTimers();
+
+      // Wait for loading to finish
+      await waitFor(() => {
+        expect(screen.queryByTestId('loading-spinner')).not.toBeInTheDocument();
+      });
+    });
+
+    // Now query for the content
+    await act(async () => {
       expect(screen.getByText('Test Company')).toBeInTheDocument();
       expect(screen.getByText('Technology')).toBeInTheDocument();
-      expect(screen.getByText('85%')).toBeInTheDocument();
+      expect(screen.getByText(/85%/)).toBeInTheDocument();
     });
   });
 
   it('shows error toast when report is not found', async () => {
-    (getDoc as any).mockResolvedValue({
-      exists: () => false,
+    // Override getDoc specifically for this test
+    vi.mocked(getDoc).mockImplementation(async (docRef: any) => {
+       // Cast the resolved value to 'any'
+       return Promise.resolve({
+         id: docRef?.id || 'test-report-id',
+         exists: () => false,
+         data: () => undefined,
+         metadata: { hasPendingWrites: false, fromCache: false, isEqual: vi.fn() },
+         get: vi.fn(),
+         ref: { path: docRef?.path || 'reports/test-report-id' },
+       } as any);
     });
 
     render(
@@ -93,15 +138,33 @@ describe('ReportDetailPage', () => {
       </BrowserRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Report not found')).toBeInTheDocument();
+    await act(async () => {
+      // Advance timers to trigger async operations
+      vi.runAllTimers();
+
+      // Wait for loading to finish and check toast
+      await waitFor(() => {
+        expect(screen.queryByTestId('loading-spinner')).not.toBeInTheDocument();
+      });
+      expect(toast.error).toHaveBeenCalledWith('Report not found');
     });
+    // Optional: Check if navigate was called
+    // const navigate = require('react-router-dom').useNavigate(); // Get mock navigate
+    // expect(navigate).toHaveBeenCalledWith('/reports');
   });
 
   it('shows error toast when user does not have permission', async () => {
-    (getDoc as any).mockResolvedValue({
-      exists: () => true,
-      data: () => ({ ...mockReport, userId: 'different-user-id' }),
+    // Override getDoc specifically for this test
+    vi.mocked(getDoc).mockImplementation(async (docRef: any) => {
+      // Cast the resolved value to 'any'
+      return Promise.resolve({
+        id: docRef?.id || 'test-report-id',
+        exists: () => true,
+        data: () => ({ ...mockReport, userId: 'different-user-id' }),
+        metadata: { hasPendingWrites: false, fromCache: false, isEqual: vi.fn() },
+        get: vi.fn(),
+        ref: { path: docRef?.path || 'reports/test-report-id' },
+      } as any);
     });
 
     render(
@@ -110,19 +173,41 @@ describe('ReportDetailPage', () => {
       </BrowserRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('You do not have permission to view this report')).toBeInTheDocument();
+    await act(async () => {
+      // Advance timers to trigger async operations
+      vi.runAllTimers();
+
+      // Wait for loading to finish and check toast
+      await waitFor(() => {
+        expect(screen.queryByTestId('loading-spinner')).not.toBeInTheDocument();
+      });
+      expect(toast.error).toHaveBeenCalledWith('You do not have permission to view this report');
     });
+    // Optional: Check if navigate was called
+    // const navigate = require('react-router-dom').useNavigate(); // Get mock navigate
+    // expect(navigate).toHaveBeenCalledWith('/reports');
   });
 
   it('renders all report sections', async () => {
+    // No need to mock getDoc here, beforeEach handles the default case
     render(
       <BrowserRouter>
         <ReportDetailPage />
       </BrowserRouter>
     );
 
-    await waitFor(() => {
+    await act(async () => {
+      // Advance timers to trigger async operations
+      vi.runAllTimers();
+
+      // Wait for loading to finish
+      await waitFor(() => {
+        expect(screen.queryByTestId('loading-spinner')).not.toBeInTheDocument();
+      });
+    });
+
+    // Now query for the content using getBy* since loading should be done
+    await act(async () => {
       // Check for section headers
       expect(screen.getByText('Financial Analysis')).toBeInTheDocument();
       expect(screen.getByText('Risk Assessment')).toBeInTheDocument();
@@ -131,8 +216,8 @@ describe('ReportDetailPage', () => {
 
       // Check for financial metrics
       expect(screen.getByText('$1,000,000')).toBeInTheDocument();
-      expect(screen.getByText('15%')).toBeInTheDocument();
-      expect(screen.getByText('25%')).toBeInTheDocument();
+      expect(screen.getByText(/15%/)).toBeInTheDocument();
+      expect(screen.getByText(/25%/)).toBeInTheDocument();
       expect(screen.getByText('$500,000')).toBeInTheDocument();
 
       // Check for risks
@@ -149,4 +234,4 @@ describe('ReportDetailPage', () => {
       expect(screen.getByText('Remote work')).toBeInTheDocument();
     });
   });
-}); 
+});

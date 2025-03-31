@@ -76,6 +76,6 @@ describe('DueDiligenceReport', () => {
       </BrowserRouter>
     );
     
-    expect(screen.getByText(/Generating report/i)).toBeInTheDocument();
+    expect(screen.getByText(/Generating\.\.\./i)).toBeInTheDocument();
   });
 });

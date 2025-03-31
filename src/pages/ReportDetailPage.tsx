@@ -137,7 +137,8 @@ const ReportDetailPage = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        {/* Add data-testid for the loading spinner */}
+        <Loader2 className="h-8 w-8 animate-spin text-primary" data-testid="loading-spinner" />
       </div>
     );
   }

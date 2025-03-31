@@ -1,5 +1,14 @@
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { vi, beforeEach, afterEach } from 'vitest';
+
+// Enable fake timers
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // Mock Firebase
 vi.mock('firebase/app', () => {
@@ -20,21 +29,60 @@ vi.mock('firebase/auth', () => {
   };
 });
 
+// --- VERY Simple Firestore Mock ---
 vi.mock('firebase/firestore', () => {
+  // console.log('Applying simplified Firestore mock in src/test/setup.ts'); // Debugging line
   return {
-    getFirestore: vi.fn(() => ({})),
-    collection: vi.fn(),
-    doc: vi.fn(),
-    setDoc: vi.fn(),
-    getDoc: vi.fn(),
-    getDocs: vi.fn(),
-    enableIndexedDbPersistence: vi.fn(),
+    getFirestore: vi.fn(() => {
+      // console.log('Simplified mock getFirestore called'); // Debugging line
+      return {}; // Simplest possible mock instance
+    }),
+    enableIndexedDbPersistence: vi.fn(() => Promise.resolve()),
+    collection: vi.fn((db, path) => ({ // Mock collection to return path info
+      path: path,
+      // Add other mock methods if needed
+    })),
+    // Mock doc to return a structured object that getDoc might expect
+    doc: vi.fn((db, collectionPath, docId) => {
+      // console.log(`Mock doc called: db=${db}, collectionPath=${collectionPath}, docId=${docId}`); // Debugging
+      return {
+        _key: { path: { segments: [collectionPath, docId] } }, // Mimic Firestore internal structure minimally
+        id: docId,
+        path: `${collectionPath}/${docId}`,
+        // Add other mock properties/methods if needed
+      };
+    }),
+    setDoc: vi.fn(() => Promise.resolve()),
+    // Simplify getDoc mock - ignore input, return default non-existent. Tests will override.
+    getDoc: vi.fn(() => {
+        // console.log('Global setup getDoc mock returning non-existent'); // Debugging
+        return Promise.resolve({ exists: () => false, data: () => undefined });
+    }),
+    getDocs: vi.fn(() => Promise.resolve({ empty: true, docs: [], size: 0 })),
     query: vi.fn(),
     where: vi.fn(),
     orderBy: vi.fn(),
     limit: vi.fn(),
+    Timestamp: { // Keep basic Timestamp mock
+      now: vi.fn(() => ({ seconds: Date.now() / 1000, nanoseconds: 0 })),
+      fromDate: vi.fn((date: Date) => ({ seconds: date.getTime() / 1000, nanoseconds: 0 })),
+      toDate: vi.fn((ts: { seconds: number }) => new Date(ts.seconds * 1000)),
+    }
   };
 });
+// --- End Simple Firestore Mock ---
+
+// Mock sonner
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  }
+}));
 
 vi.mock('firebase/storage', () => {
   return {

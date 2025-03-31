@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, FileText, Lock, Search, Bot, AlertCircle, Settings2, ChevronDown, ChevronUp } from "lucide-react";
 import { useAuth } from '@/components/auth/authContext';
+import { analyzeSECFiling } from '@/features/ai-processor/SECAnalyzer';
+import { getAlphaVantageData, fetchSECFilings } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,16 +84,22 @@ export function DueDiligenceReport({
 
   const handleGenerateReport = async () => {
     if (!company) {
-      toast.error('Please enter a company name or ticker symbol');
+      toast.error('Company Required', {
+        description: 'Please enter a company name or ticker symbol'
+      });
       return;
     }
 
     // Check if user can generate a report (trial active and has remaining reports)
     if (!canGenerateReport()) {
       if (trialStatus.endDate && new Date() > trialStatus.endDate) {
-        toast.error('Your trial has expired. Please upgrade to continue generating reports.');
+        toast.error('Trial Expired', {
+        description: 'Please upgrade to continue generating reports.'
+      });
       } else if (trialStatus.reportsUsed >= trialStatus.reportsLimit) {
-        toast.error('You have used all your trial reports. Please upgrade to generate more reports.');
+        toast.error('Trial Reports Exhausted', {
+          description: 'Please upgrade to generate more reports.'
+        });
       }
       return;
     }
@@ -106,14 +114,29 @@ export function DueDiligenceReport({
         return;
       }
 
-      // Use our enhanced report generation system that provides real data for first 5 reports
-      const generatedReport = await generateReport(company);
+      // 1. First get SEC filings for the company
+      const secFilings = await fetchSECFilings(company);
       
-      // Track report generation
+      // 2. Analyze the latest filing
+      const latestFiling = secFilings[0]; // Get most recent filing
+      const analyzedReport = await analyzeSECFiling(latestFiling.url, company);
+      
+      // 3. Enhance with additional financial data
+      const financialData = await getAlphaVantageData(company);
+      const enhancedReport = {
+        ...analyzedReport,
+        financialAnalysis: {
+          ...analyzedReport.financialAnalysis,
+          metrics: {
+            ...analyzedReport.financialAnalysis.metrics,
+            ...financialData
+          }
+        }
+      };
+
+      // 4. Store and track
       await trackReportGeneration();
-      
-      // Set the report
-      setReport(generatedReport);
+      setReport(enhancedReport);
       
       // Show success message
       toast.success(`Report for ${company} generated successfully!`);
@@ -121,7 +144,9 @@ export function DueDiligenceReport({
     } catch (err: any) {
       console.error('Error generating due diligence report:', err);
       setError(err.message || 'Failed to generate report. Please try again.');
-      toast.error('Error generating report');
+      toast.error('Report Generation Failed', {
+        description: err.message || 'Failed to generate report. Please try again.'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -427,16 +452,16 @@ export function DueDiligenceReport({
       toast.success('PDF downloaded successfully!');
     } catch (err) {
       console.error('Error generating PDF:', err);
-      toast.error('Failed to generate PDF. Please try again.');
+      toast.error('PDF Generation Failed', {
+        description: 'Failed to generate PDF. Please try again.'
+      });
     }
   };
 
   return (
     <div className={cn("space-y-6", className)}>
       {/* Trial Status */}
-      {!isLandingDemo && user && (
-        <TrialStatus trialStatus={trialStatus} loading={trialLoading} />
-      )}
+      {!isLandingDemo && user && <TrialStatus />}
       
       {/* Report Generation Form */}
       <Card>

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuthService, handleAuthError } from '../../services/auth';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
-import { auth } from '../../firebase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +13,7 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const db = getFirestore();
+  const authService = getAuthService();
 
   // Create test admin account on component mount
   useEffect(() => {
@@ -24,14 +24,14 @@ const Register = () => {
         
         try {
           // Try to sign in first
-          await signInWithEmailAndPassword(auth, testEmail, testPassword);
+          await authService.signIn(testEmail, testPassword);
           console.log('Test admin account exists and is accessible');
-        } catch (signInError) {
+        } catch (error) {
           // If sign in fails, create the account
-          const userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
+          const user = await authService.signUp(testEmail, testPassword);
           
           // Set admin role in Firestore
-          await setDoc(doc(db, 'users', userCredential.user.uid), {
+          await setDoc(doc(db, 'users', user.uid), {
             email: testEmail,
             role: 'admin',
             createdAt: new Date().toISOString(),
@@ -44,7 +44,7 @@ const Register = () => {
 
           console.log('Test admin account created:', testEmail);
         }
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error with test admin account:', error);
       }
     };
@@ -57,10 +57,10 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = await authService.signUp(email, password);
       
       // Set user role and trial info in Firestore
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
+      await setDoc(doc(db, 'users', user.uid), {
         email,
         role: 'user',
         createdAt: new Date().toISOString(),
@@ -76,29 +76,10 @@ const Register = () => {
       });
       
       navigate('/profile');
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      let errorMessage = "Registration failed";
-      
-      switch (error.code) {
-        case 'auth/email-already-in-use':
-          errorMessage = "This email is already registered";
-          break;
-        case 'auth/invalid-email':
-          errorMessage = "Invalid email address";
-          break;
-        case 'auth/operation-not-allowed':
-          errorMessage = "Email/password accounts are not enabled";
-          break;
-        case 'auth/weak-password':
-          errorMessage = "Password is too weak";
-          break;
-        default:
-          errorMessage = error.message;
-      }
-      
+    } catch (error: unknown) {
+      const authError = handleAuthError(error);
       toast.error("Registration failed", {
-        description: errorMessage
+        description: authError.message
       });
     } finally {
       setLoading(false);

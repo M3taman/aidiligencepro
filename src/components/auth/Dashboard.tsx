@@ -33,7 +33,7 @@ const features = [
 ];
 
 const Dashboard = () => {
-  const { user, hasTrial } = useAuth();
+  const { user, trialStatus } = useAuth();
   const [loading, setLoading] = useState(true);
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
@@ -180,22 +180,15 @@ const Dashboard = () => {
               Welcome back, {user?.displayName || 'User'}
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button asChild>
-              <Link to="/due-diligence">
-                New Due Diligence Report
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to="/mcp-report">
-                MCP Report
-              </Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link to="/due-diligence">
+              New Due Diligence Report
+            </Link>
+          </Button>
         </div>
         
         {/* Trial Banner */}
-        {hasTrial && trialDaysLeft !== null && (
+        {trialStatus.isActive && trialDaysLeft !== null && (
           <Card className="mb-8 bg-primary/5 border-primary/20">
             <CardContent className="pt-6">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -346,4 +339,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, Bot, LineChart, Shield, Clock, Users, Zap } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { DueDiligencePage } from './pages/DueDiligencePage';
+import SECAnalysisPage from './pages/SECAnalysisPage';
 import { Pricing } from './pages/Pricing';
 import { About } from './pages/About';
 import { FAQ } from './pages/FAQ';
@@ -183,6 +184,7 @@ const Root = () => {
                     <Route path="reports/:reportId" element={<ReportDetailPage />} />
                     <Route path="demo" element={<DemoPage />} />
                     <Route path="file-manager" element={<FileManagerPage />} />
+                    <Route path="sec-analysis" element={<SECAnalysisPage />} />
                   </Route>
                 </Routes>
                 <Toaster />
