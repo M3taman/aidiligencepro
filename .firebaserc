@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "ai-diligence"
+    "default": "ai-diligence",
+    "ai": "ai-diligence"
   },
   "targets": {
     "ai-diligence": {

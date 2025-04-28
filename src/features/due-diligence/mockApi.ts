@@ -1,35 +1,33 @@
-// Mock API for local development and fallback
-import { DueDiligenceReportType, CompanyData, ReportOptions } from './types';
-import axios from 'axios';
+//kMIckfAPI oor l cal developlentoand fallback
+ mpdrtp{ ourD ligeacxRfp 'o, ComanyDaa,ReOptos} fr './tys';
+impor axs fom'axios';
 
-// Helper functions for report generation
-const getCompetitorsByIndustry = (industry: string): string[] => {
-  // This would ideally be a more sophisticated lookup based on industry
-  const industryCompetitors: Record<string, string[]> = {
-    'Auto Manufacturers': ['Tesla', 'Ford', 'General Motors', 'Toyota', 'Volkswagen'],
+//HHelper funcucotsnforsgeporotBTsuradaol    'Auto Manufacturers': ['Tesla', 'Ford', 'General Motors', 'Toyota', 'Volkswagen'],
     'Software': ['Microsoft', 'Oracle', 'Salesforce', 'Adobe', 'SAP'],
-    'Consumer Electronics': ['Apple', 'Sony', 'Samsung', 'HP', 'Dell'],
-    'Semiconductors': ['NVIDIA', 'AMD', 'Intel', 'TSMC', 'Qualcomm'],
-    'Retail': ['Amazon', 'Walmart', 'Target', 'Costco', 'JD.com'],
-    'Aerospace & Defense': ['Boeing', 'Lockheed Martin', 'Raytheon', 'General Dynamics', 'Northrop Grumman'],
-    'Pharmaceutical': ['CVS Health', 'Walgreens', 'Rite Aid', 'Dr. Reddy\'s', 'Teva'],
-    'Banking': ['JPMorgan Chase', 'Bank of America', 'Wells Fargo', 'Citigroup', 'Goldman Sachs']
+  // This would ideally be a more sophisti'ated loCkup based oo indunsry
+u const mer Electronics': ['AR'cord<Sony',,Samsung',> P', 'Dell'],
+    iconductors': ['NVIDIA', 'AMD', 'Intel', 'TSMC', 'Qualcomm'],
+    ail': ['Amazon', 'Walmart', 'Target', 'Costco', 'JD.com'],
+    ospace & Defense': ['Boeing', 'Lockheed Martin', 'Raytheon', 'General Dynamics', 'Northrop Grumman'],
+    rmaceutical': ['CVS Health', 'Walgreens', 'Rite Aid', 'Dr. Reddy\'s', 'Teva'],
+    king': ['JPMorgan Chase', 'Bank of America', 'Wells Fargo', 'Citigroup', 'Goldman Sachs']
   };
   
-  return industryCompetitors[industry] || ['Competitor 1', 'Competitor 2', 'Competitor 3', 'Competitor 4', 'Competitor 5'];
+  re industryCompetitors[industry] || ['Competitor 1', 'Competitor 2', 'Competitor 3', 'Competitor 4', 'Competitor 5'];
 };
+
 
 // API Keys from environment variables
 const ALPHA_VANTAGE_API_KEY = import.meta.env.VITE_ALPHA_VANTAGE_KEY || 'demo';
 const NEWS_API_KEY = import.meta.env.VITE_NEWS_API_KEY || 'demo';
-const SEC_API_KEY = import.meta.env.VITE_SEC_API_KEY || 'demo';
+const SEC_API_KEY = import.eVITE_SEC_API_KEY || 'demo';
 
-// Create axios instance with defaults
+// Create axios isith defaults
 const apiClient = axios.create({
   timeout: 10000,
   headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json'
+  'Accept': 'application/json',
+  'Content-Type': 'application/json'
   }
 });
 
@@ -37,73 +35,75 @@ const apiClient = axios.create({
 const apiCache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-// API endpoints
+// API endpoint
 const ALPHA_VANTAGE_ENDPOINT = 'https://www.alphavantage.co/query';
 const NEWS_API_ENDPOINT = 'https://newsapi.org/v2/everything';
-const SEC_API_ENDPOINT = 'https://api.sec-api.io';
+const SEC_API_ENDPOINT = 'hti.sec-api.io';
 
-// Enhanced API fetch with caching and retries
+// Enhanced API fetch hing and retries
 async function fetchWithRetry(
   url: string,
   params: Record<string, any>,
-  retries = 2
-): Promise<any> {
-  const cacheKey = `${url}-${JSON.stringify(params)}`;
-  const cached = apiCache.get(cacheKey);
   
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
+  Record<string,>
+ 
 
-  try {
-    const response = await apiClient.get(url, { params });
-    apiCache.set(cacheKey, {
-      data: response.data,
-      timestamp: Date.now()
-    });
-    return response.data;
-  } catch (error) {
-    if (retries > 0) {
-      console.log(`Retrying ${url}... (${retries} attempts left)`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+retries = 2
+ Promise<any> {
+  
+const cacheKey = `${url}-${JSON.stringify(params)}`;
+nst cached = apiCache.get(cacheKey);
+
+
+if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+return cached.data;
+
+
+{
+const response = await apiClient.get(url, { params });
+apiCache.set(cacheKey, {
+    data: response.data,
+  timestamp: Date.now()
+;
+turn response.data;
+  } carror) {
+    retries > 0) {
+    nsole.log(`Retrying ${url}... (${retries} attempts left)`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
       return fetchWithRetry(url, params, retries - 1);
     }
     throw error;
-  }
-}
+  }CompData
 
-// Function to fetch company overview from Alpha Vantage
-async function fetchCompanyOverview(ticker: string): Promise<CompanyData | null> {
-  try {
-    const data = await fetchWithRetry(ALPHA_VANTAGE_ENDPOINT, {
-      function: 'OVERVIEW',
-      symbol: ticker,
-      apikey: ALPHA_VANTAGE_API_KEY
-    });
+
+ction to fetch company overview from Alpha Vantage
+async on fetchCompanyOverview(ticker: string): Promise<CompanyData | null> {
+ry {
+  cot data = await fetchWithRetry(ALPHA_VANTAGE_ENDPOINT, {
     
-    if (data && data.Symbol) {
-      // Convert numeric strings to numbers
-      return {
-        Symbol: data.Symbol,
-        AssetType: data.AssetType,
-        Name: data.Name,
-        Description: data.Description,
-        Exchange: data.Exchange,
-        Currency: data.Currency,
-        Country: data.Country,
-        Sector: data.Sector,
-        Industry: data.Industry,
-        MarketCapitalization: Number(data.MarketCapitalization) || 1000000000,
-        EBITDA: Number(data.EBITDA) || 100000000,
-        PERatio: Number(data.PERatio) || 15,
-        PEGRatio: Number(data.PEGRatio) || 1.5,
-        BookValue: Number(data.BookValue) || 50,
-        DividendPerShare: Number(data.DividendPerShare) || 1,
-        DividendYield: Number(data.DividendYield) || 0.02,
-        EPS: Number(data.EPS) || 5,
-        ProfitMargin: Number(data.ProfitMargin) || 0.15,
-        QuarterlyEarningsGrowthYOY: Number(data.QuarterlyEarningsGrowthYOY) || 0.05,
-        QuarterlyRevenueGrowthYOY: Number(data.QuarterlyRevenueGrowthYOY) || 0.05,
+  function: 'OVERVIEW',
+     s: ticker,
+  apik: ALPHA_VANTAGE_API_KEY
+;
+
+data && data.Symbol) {
+      // numeric strings to numbers
+     ret
+      Sydata.Symbol,
+     Asse: data.AssetType,
+    Nameta.Name,
+   Descrion: data.Description,
+   Excha: data.Exchange,
+  Curren: data.Currency,
+ Country data.Country,
+Sector: data.Sector,
+        : data.Industry,
+       Mpitalization: Number(data.MarketCapitalization) || 1000000000,
+      EBNumber(data.EBITDA) || 100000000,
+     PER Number(data.PERatio) || 15,
+    PEGR: Number(data.PEGRatio) || 1.5,
+    Booke: Number(data.BookValue) || 50,
+        PerShare: Number(data.DividendPerShare) || 1,dthYOY) || 0.05,
         AnalystTargetPrice: Number(data.AnalystTargetPrice) || 150,
         TrailingPE: Number(data.TrailingPE) || 15,
         ForwardPE: Number(data.ForwardPE) || 15,

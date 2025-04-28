@@ -1,886 +1,1768 @@
 import { onRequest } from "firebase-functions/v2/https";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import cors from 'cors';
-import fetch from 'node-fetch';
-import { initializeApp } from 'firebase-admin/app';
+import admin from './firebaseAdmin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { defineSecret } from "firebase-functions/params";
+import { validateAuth } from './middleware/auth';
+import { Logger } from '../utils/logger';
+
+// Initialize logger
+const logger = new Logger('DueDiligenceFunction');
+
+// Dynamic import for node-fetch
+const fetch = async (...args: [any, any?]) => {
+  const { default: fetchFn } = await import('node-fetch');
+  return fetchFn(...args);
+};
+
+// Custom error classes for better error handling
+class DueDiligenceError extends Error {
+  constructor(
+    message: string, 
+    public code: 'auth_error' | 'validation_error' | 'rate_limit' | 'api_error' | 'parsing_error' | 'internal_error',
+    public statusCode: number,
+    public cause?: Error
+  ) {
+    super(message);
+    this.name = 'DueDiligenceError';
+  }
+}
 
 // Define secrets
-const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const AIML_API_KEY = defineSecret("AIML_API_KEY");
 const ALPHA_VANTAGE_API_KEY = defineSecret("ALPHA_VANTAGE_API_KEY");
 const NEWS_API_KEY = defineSecret("NEWS_API_KEY");
 const SEC_API_KEY = defineSecret("SEC_API_KEY");
 
-// Initialize Firebase Admin
-initializeApp();
+// Firebase Admin initialized in shared module
 
-// Update the model name to use the correct version
-const MODEL_NAME = "gemini-pro";
-
-// Initialize Gemini only when needed
-let genAI: GoogleGenerativeAI | null = null;
-
-function initializeGenAI(apiKey: string) {
-    if (!genAI) {
-        try {
-            genAI = new GoogleGenerativeAI(apiKey);
-            console.log('Gemini AI initialized successfully with model:', MODEL_NAME);
-        }
-        catch (error) {
-            console.error('Error initializing Gemini AI:', error);
-            throw new Error('Failed to initialize Gemini AI');
-        }
-    }
-    return genAI;
-}
+// API configuration
+const AIML_API_URL = 'https://api.aiml.com/v1/chat/completions';
 
 // CORS middleware
 const corsHandler = cors({
-    origin: true,
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: true,
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 });
 
-// Define TypeScript interfaces for Alpha Vantage API responses
-interface AlphaVantageResponse {
-    bestMatches?: Array<{
-        symbol: string;
-        name: string;
-        region: string;
-        currency: string;
-    }>;
-    Note?: string;
-    [key: string]: any;
+// Comprehensive Due Diligence Response interface aligned with DueDiligenceReportType
+interface CompanyData {
+  Symbol?: string;
+  AssetType?: string;
+  Name?: string;
+  Description?: string;
+  Exchange?: string;
+  Currency?: string;
+  Country?: string;
+  Sector?: string;
+  Industry?: string;
+  MarketCapitalization?: number;
+  EBITDA?: number;
+  PERatio?: number;
+  PEGRatio?: number;
+  BookValue?: number;
+  DividendPerShare?: number;
+  DividendYield?: number;
+  EPS?: number;
+  ProfitMargin?: number;
+  QuarterlyEarningsGrowthYOY?: number;
+  QuarterlyRevenueGrowthYOY?: number;
+  AnalystTargetPrice?: number;
+  TrailingPE?: number;
+  ForwardPE?: number;
+  PriceToSalesRatioTTM?: number;
+  PriceToBookRatio?: number;
+  EVToRevenue?: number;
+  EVToEBITDA?: number;
+  Beta?: number;
+  '52WeekHigh'?: number;
+  '52WeekLow'?: number;
+  '50DayMovingAverage'?: number;
+  '200DayMovingAverage'?: number;
+  SharesOutstanding?: number;
+  DividendDate?: string;
+  ExDividendDate?: string;
+  ticker?: string;
+  exchange?: string;
+  industry?: string;
+  sector?: string;
+  marketCap?: number;
+  employees?: number;
+  founded?: number;
+  ceo?: string;
+  headquarters?: string;
+  website?: string;
+  region?: string;
 }
 
-interface OverviewResponse {
-    Symbol: string;
-    AssetType: string;
-    Name: string;
-    Description: string;
-    CIK: string;
-    Exchange: string;
-    Currency: string;
-    Country: string;
-    Sector: string;
-    Industry: string;
-    Address: string;
-    FiscalYearEnd: string;
-    LatestQuarter: string;
-    MarketCapitalization: string;
-    EBITDA: string;
-    RevenueTTM: string;
-    GrossProfitTTM: string;
-    DilutedEPSTTM: string;
-    ProfitMargin: string;
-    OperatingMarginTTM: string;
-    ReturnOnAssetsTTM: string;
-    ReturnOnEquityTTM: string;
-    RevenuePerShareTTM: string;
-    QuarterlyRevenueGrowthYOY: string;
-    QuarterlyEarningsGrowthYOY: string;
-    BookValuePerShareQuarterly: string;
-    OperatingCashFlowTTM: string;
-    Beta: string;
-    PEGRatio: string;
-    PERatio: string;
-    ForwardPE: string;
-    PSRatio: string;
-    PBRatio: string;
-    DividendPerShareTTM: string;
-    DividendYield: string;
-    PayoutRatio: string;
-    DividendDate: string;
-    ExDividendDate: string;
-    LastSplitFactor: string;
-    LastSplitDate: string;
-    AnalystTargetPrice: string;
-    SharesOutstanding: string;
-    [key: string]: any;
+interface NewsItem {
+  title: string;
+  description: string;
+  url: string;
+  publishedAt: string;
+  date: string;
+  source: {
+    name: string;
+  };
+  summary?: string;
 }
 
-// Add new data source interfaces
-interface NewsResponse {
-    articles: Array<{
-        title: string;
-        description: string;
-        url: string;
-        publishedAt: string;
-        source: {
-            name: string;
-        };
-    }>;
+interface SECFiling {
+  type: string;
+  filingDate: string;
+  date: string;
+  description: string;
+  url: string;
 }
 
-interface SECApiResponse {
-    filings: Array<{
-        formType: string;
-        filedAt: string;
-        description?: string;
-        linkToFilingDetails: string;
-    }>;
+type StringOrStringArray = string | string[];
+
+interface ExecutiveSummaryType {
+  overview: string;
+  keyFindings?: StringOrStringArray;
+  riskRating?: string;
+  recommendation?: string;
 }
 
-// Add rate limiting and error handling utilities
-interface RateLimitConfig {
-    maxRequests: number;
-    timeWindow: number; // in milliseconds
+interface FinancialAnalysisType {
+  overview: string;
+  metrics: Record<string, any>;
+  trends: string | string[];
+  ratios?: Record<string, number>;
+  strengths?: StringOrStringArray;
+  weaknesses?: StringOrStringArray;
+  revenueGrowth?: string;
+  profitabilityMetrics?: string;
+  balanceSheetAnalysis?: string;
+  cashFlowAnalysis?: string;
 }
 
-class RateLimiter {
-    private requests: number[] = [];
-    private config: RateLimitConfig;
-
-    constructor(config: RateLimitConfig) {
-        this.config = config;
-    }
-
-    async checkLimit(): Promise<boolean> {
-        const now = Date.now();
-        this.requests = this.requests.filter(time => now - time < this.config.timeWindow);
-        
-        if (this.requests.length >= this.config.maxRequests) {
-            return false;
-        }
-
-        this.requests.push(now);
-        return true;
-    }
-
-    async waitForSlot(): Promise<void> {
-        while (!(await this.checkLimit())) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-    }
+interface MarketAnalysisType {
+  overview: string;
+  competitors: string[] | Array<{
+    name: string;
+    strengths?: string;
+    weaknesses?: string;
+  }>;
+  swot?: {
+    strengths: string | string[];
+    weaknesses: string | string[];
+    opportunities: string | string[];
+    threats: string | string[];
+  };
+  marketPosition?: string;
+  position?: string;
+  industryOverview?: string;
+  competitiveLandscape?: string;
+  marketShare?: string;
+  competitiveAdvantages?: string;
 }
 
-// Keep only the rate limiters we need
-const alphaVantageRateLimiter = new RateLimiter({ maxRequests: 5, timeWindow: 60000 }); // 5 requests per minute
-
-// Add retry logic for API calls
-async function retryWithBackoff<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = 3,
-    initialDelay: number = 1000
-): Promise<T> {
-    let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            return await operation();
-        } catch (error: any) {
-            lastError = error;
-            if (error.status === 429) { // Rate limit exceeded
-                const delay = initialDelay * Math.pow(2, attempt);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-            throw error;
-        }
-    }
-    
-    throw lastError;
+interface RiskAssessmentType {
+  overview: string;
+  riskFactors: {
+    financial: string[];
+    operational: string[];
+    market: string[];
+    regulatory: string[];
+    esg?: string[];
+  };
+  riskRating: 'low' | 'medium' | 'high';
+  financial?: string;
+  operational?: string;
+  market?: string;
+  regulatory?: string;
+  esgConsiderations?: string;
+  financialRisks?: string;
+  operationalRisks?: string;
+  marketRisks?: string;
+  regulatoryRisks?: string;
 }
 
-// Add caching functionality
-interface CacheEntry<T> {
-    data: T;
-    timestamp: number;
-    expiresAt: number;
+interface RecentDevelopmentsType {
+  news: NewsItem[];
+  events?: string[];
+  filings?: Array<{
+    title?: string;
+    type?: string;
+    date: string;
+    description?: string;
+    url?: string;
+  }>;
+  strategic?: StringOrStringArray | Array<{
+    title: string;
+    date: string;
+    summary?: string;
+    description?: string;
+  }>;
+  management?: string[];
 }
 
-class APICache {
-    private db = getFirestore();
-    private readonly COLLECTION = 'api_cache';
-    private readonly DEFAULT_TTL = 3600000; // 1 hour in milliseconds
-
-    async get<T>(key: string): Promise<T | null> {
-        try {
-            const doc = await this.db.collection(this.COLLECTION).doc(key).get();
-            if (!doc.exists) {
-                return null;
-            }
-
-            const entry = doc.data() as CacheEntry<T>;
-            if (Date.now() > entry.expiresAt) {
-                await this.delete(key);
-                return null;
-            }
-
-            return entry.data;
-        } catch (error) {
-            console.error('Cache get error:', error);
-            return null;
-        }
-    }
-
-    async set<T>(key: string, data: T, ttl: number = this.DEFAULT_TTL): Promise<void> {
-        try {
-            const entry: CacheEntry<T> = {
-                data,
-                timestamp: Date.now(),
-                expiresAt: Date.now() + ttl
-            };
-            await this.db.collection(this.COLLECTION).doc(key).set(entry);
-        } catch (error) {
-            console.error('Cache set error:', error);
-        }
-    }
-
-    async delete(key: string): Promise<void> {
-        try {
-            await this.db.collection(this.COLLECTION).doc(key).delete();
-        } catch (error) {
-            console.error('Cache delete error:', error);
-        }
-    }
-}
-
-const apiCache = new APICache();
-
-// Enhanced structure for due diligence reports
+// Due Diligence Response interface
 interface DueDiligenceResponse {
-    companyName: string;
-    timestamp: string;
-    executiveSummary: {
-        overview: string;
-        keyFindings: string[];
-        riskRating: 'Low' | 'Medium' | 'High';
-        recommendation: string;
-    };
-    financialAnalysis: {
-        metrics: Record<string, string | number>;
-        trends: string[];
-        strengths: string[];
-        weaknesses: string[];
-    };
-    marketAnalysis: {
-        position: string;
-        competitors: string[];
-        marketShare: string;
-        swot: {
-            strengths: string[];
-            weaknesses: string[];
-            opportunities: string[];
-            threats: string[];
-        };
-    };
-    riskAssessment: {
-        financial: string[];
-        operational: string[];
-        market: string[];
-        regulatory: string[];
-        esg: string[];
-    };
-    recentDevelopments: {
-        news: {
-            title: string;
-            url: string;
-            date: string;
-            source: string;
-        }[];
-        filings: {
-            type: string;
-            date: string;
-            description: string;
-            url: string;
-        }[];
-        management: string[];
-        strategic: string[];
-    };
+  companyName: string;
+  ticker?: string;
+  timestamp: string;
+  companyData: CompanyData;
+  executiveSummary: string | ExecutiveSummaryType;
+  keyFindings?: string[];
+  financialAnalysis: string | FinancialAnalysisType;
+  marketAnalysis: string | MarketAnalysisType;
+  riskAssessment: string | RiskAssessmentType;
+  recentDevelopments?: RecentDevelopmentsType;
+  conclusion?: string;
+  generatedAt?: string;
+  metadata?: {
+    analysisDepth: 'basic' | 'standard' | 'comprehensive';
+    focusAreas: string[];
+    dataSources: string[];
+  };
 }
 
-// Update getCompanyData to include currency conversion
-async function getCompanyDataRaw(companyName: string, apiKey: string): Promise<OverviewResponse | AlphaVantageResponse> {
+// Parse error handling
+class ParseError extends Error {
+  constructor(message: string, public section?: string, public cause?: Error) {
+    super(message);
+    this.name = 'ParseError';
+  }
+}
+
+// Parse AI response into structured format
+function parseAIResponse(text: string, companyName: string, companyData: CompanyData): DueDiligenceResponse {
+  logger.debug('Parsing AI response for company: ' + companyName);
+  
+  try {
+    // First attempt to parse the response as JSON
     try {
-        await alphaVantageRateLimiter.waitForSlot();
+      // Check if the entire response is JSON
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || 
+                        text.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        const jsonContent = jsonMatch[1] || jsonMatch[0];
+        try {
+          const parsedResponse = JSON.parse(jsonContent);
+          logger.info('Successfully parsed AI response as JSON');
+          
+          // Validate and enhance the parsed response
+          return validateAndEnhanceResponse(parsedResponse, companyName, companyData);
+        } catch (jsonError) {
+          logger.warn('JSON parsing failed, falling back to section parsing', jsonError);
+        }
+      }
+    } catch (error) {
+      logger.warn('Initial JSON parsing attempt failed', error);
+    }
+    
+    // If JSON parsing fails, attempt section-by-section parsing
+    logger.debug('Parsing AI response by sections');
+    
+    // Initialize structured response
+    const response: DueDiligenceResponse = {
+      companyName,
+      ticker: companyData.Symbol || companyData.ticker,
+      timestamp: new Date().toISOString(),
+      companyData,
+      executiveSummary: { overview: '' },
+      financialAnalysis: { overview: '', metrics: {}, trends: [] },
+      marketAnalysis: { overview: '', competitors: [] },
+      riskAssessment: { 
+        overview: '', 
+        riskFactors: {
+          financial: [],
+          operational: [],
+          market: [],
+          regulatory: []
+        },
+        riskRating: 'medium'
+      },
+      generatedAt: new Date().toISOString(),
+      metadata: {
+        analysisDepth: 'standard',
+        focusAreas: ['financial', 'market', 'risk'],
+        dataSources: ['AI Analysis']
+      }
+    };
+    
+    // Extract sections using regex patterns
+    // Executive Summary
+    const execSummaryMatch = text.match(/Executive\s+Summary[\s\S]*?(?=Financial\s+Analysis|Market\s+Analysis|Risk\s+Assessment|Recent\s+Developments|Conclusion|$)/i);
+    if (execSummaryMatch) {
+      const execSummaryText = execSummaryMatch[0].replace(/Executive\s+Summary[:\s]*/i, '').trim();
+      
+      // Look for key findings
+      const keyFindingsMatch = execSummaryText.match(/Key\s+Findings[:\s]*([\s\S]*?)(?=Risk\s+Rating|Recommendation|$)/i);
+      const recommendationMatch = execSummaryText.match(/Recommendation[:\s]*([\s\S]*?)(?=$)/i);
+      const riskRatingMatch = execSummaryText.match(/Risk\s+Rating[:\s]*([A-Za-z]+)/i);
+      
+      // Extract overview (everything before Key Findings if present)
+      const overviewMatch = execSummaryText.match(/^([\s\S]*?)(?=Key\s+Findings|$)/i);
+      
+      const executiveSummary: ExecutiveSummaryType = {
+        overview: overviewMatch ? overviewMatch[1].trim() : execSummaryText
+      };
+      
+      if (keyFindingsMatch) {
+        // Parse key findings as bullet points or numbered list
+        const keyFindings = keyFindingsMatch[1].split(/\n[•\-\*\d.]\s+/).filter(Boolean).map(item => item.trim());
+        if (keyFindings.length > 0) {
+          executiveSummary.keyFindings = keyFindings;
+          response.keyFindings = keyFindings;
+        }
+      }
+      
+      if (recommendationMatch) {
+        executiveSummary.recommendation = recommendationMatch[1].trim();
+      }
+      
+      if (riskRatingMatch) {
+        const rating = riskRatingMatch[1].toLowerCase();
+        executiveSummary.riskRating = rating;
+        // Also set in risk assessment section
+        if (typeof response.riskAssessment === 'object') {
+          response.riskAssessment.riskRating = rating.includes('high') ? 'high' : 
+                                              rating.includes('low') ? 'low' : 'medium';
+        }
+      }
+      
+      response.executiveSummary = executiveSummary;
+    } else {
+      logger.warn('Executive Summary section not found');
+    }
+    
+    // Financial Analysis
+    const financialMatch = text.match(/Financial\s+Analysis[\s\S]*?(?=Market\s+Analysis|Risk\s+Assessment|Recent\s+Developments|Conclusion|$)/i);
+    if (financialMatch) {
+      const financialText = financialMatch[0].replace(/Financial\s+Analysis[:\s]*/i, '').trim();
+      
+      // Extract metrics, strengths, weaknesses
+      const metricsMatch = financialText.match(/Key\s+Metrics[:\s]*([\s\S]*?)(?=Trends|Strengths|Weaknesses|$)/i);
+      const trendsMatch = financialText.match(/Trends[:\s]*([\s\S]*?)(?=Strengths|Weaknesses|$)/i);
+      const strengthsMatch = financialText.match(/Strengths[:\s]*([\s\S]*?)(?=Weaknesses|$)/i);
+      const weaknessesMatch = financialText.match(/Weaknesses[:\s]*([\s\S]*?)(?=$)/i);
+      const ratiosMatch = financialText.match(/Ratios[:\s]*([\s\S]*?)(?=Balance\s+Sheet|$)/i);
+      const balanceSheetMatch = financialText.match(/Balance\s+Sheet[:\s]*([\s\S]*?)(?=Cash\s+Flow|$)/i);
+      const cashFlowMatch = financialText.match(/Cash\s+Flow[:\s]*([\s\S]*?)(?=$)/i);
+      
+      // Extract overview (first paragraph or sentence)
+      const overviewMatch = financialText.match(/^(.*?)(?=\n\n|\n[A-Z]|Key\s+Metrics|$)/i);
+      
+      const financialAnalysis: FinancialAnalysisType = {
+        overview: overviewMatch ? overviewMatch[1].trim() : financialText.substring(0, 200),
+        metrics: {},
+        trends: []
+      };
+      
+      // Process metrics
+      if (metricsMatch) {
+        const metricsText = metricsMatch[1].trim();
+        const metricLines = metricsText.split('\n').filter(Boolean);
         
-        // First try symbol search
-        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(companyName)}&apikey=${apiKey}`;
+        // Extract key-value pairs like "Metric Name: Value"
+        metricLines.forEach(line => {
+          const match = line.match(/^[•\-\*]?\s*([^:]+):\s*(.+)$/);
+          if (match) {
+            const [, metricName, metricValue] = match;
+            financialAnalysis.metrics[metricName.trim()] = metricValue.trim();
+          }
+        });
+      }
+      
+      // Process trends
+      if (trendsMatch) {
+        const trendsText = trendsMatch[1].trim();
+        // Check if trends are bullet points or paragraph
+        const trendsLines = trendsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (trendsLines.length > 1) {
+          // Bullet points
+          financialAnalysis.trends = trendsLines.map(line => line.trim());
+        } else {
+          // Single paragraph
+          financialAnalysis.trends = trendsText;
+        }
+      }
+      
+      // Process strengths
+      if (strengthsMatch) {
+        const strengthsText = strengthsMatch[1].trim();
+        const strengthsLines = strengthsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (strengthsLines.length > 1) {
+          financialAnalysis.strengths = strengthsLines.map(line => line.trim());
+        } else {
+          financialAnalysis.strengths = strengthsText;
+        }
+      }
+      
+      // Process weaknesses
+      if (weaknessesMatch) {
+        const weaknessesText = weaknessesMatch[1].trim();
+        const weaknessesLines = weaknessesText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (weaknessesLines.length > 1) {
+          financialAnalysis.weaknesses = weaknessesLines.map(line => line.trim());
+        } else {
+          financialAnalysis.weaknesses = weaknessesText;
+        }
+      }
+      
+      // Process ratios
+      if (ratiosMatch) {
+        const ratiosText = ratiosMatch[1].trim();
+        const ratioLines = ratiosText.split('\n').filter(Boolean);
         
-        const searchResponse = await retryWithBackoff<any>(async () => {
-            const response = await fetch(searchUrl);
-            if (!response.ok) {
-                throw new Error(`Alpha Vantage API error: ${response.status}`);
-            }
-            return await response.json();
+        const ratios: Record<string, number> = {};
+        ratioLines.forEach(line => {
+          const match = line.match(/^[•\-\*]?\s*([^:]+):\s*([\d.]+)%?/);
+          if (match) {
+            const [, ratioName, ratioValue] = match;
+            // Convert to number, removing any % sign
+            ratios[ratioName.trim()] = parseFloat(ratioValue.trim());
+          }
         });
         
-        // Check if we got valid search results
-        if (searchResponse?.bestMatches && Array.isArray(searchResponse.bestMatches) && searchResponse.bestMatches.length > 0) {
-            // The API returns properties with numbers in the name like '1. symbol'
-            const symbol = searchResponse.bestMatches[0]['1. symbol'] || '';
+        if (Object.keys(ratios).length > 0) {
+          financialAnalysis.ratios = ratios;
+        }
+      }
+      
+      // Add balance sheet analysis
+      if (balanceSheetMatch) {
+        financialAnalysis.balanceSheetAnalysis = balanceSheetMatch[1].trim();
+      }
+      
+      // Add cash flow analysis
+      if (cashFlowMatch) {
+        financialAnalysis.cashFlowAnalysis = cashFlowMatch[1].trim();
+      }
+      
+      response.financialAnalysis = financialAnalysis;
+    } else {
+      logger.warn('Financial Analysis section not found');
+    }
+    
+    // Market Analysis
+    const marketMatch = text.match(/Market\s+Analysis[\s\S]*?(?=Risk\s+Assessment|Recent\s+Developments|Conclusion|$)/i);
+    if (marketMatch) {
+      const marketText = marketMatch[0].replace(/Market\s+Analysis[:\s]*/i, '').trim();
+      
+      // Extract competitors, SWOT, market position
+      const competitorsMatch = marketText.match(/Competitors[:\s]*([\s\S]*?)(?=SWOT|Market\s+Position|Competitive\s+Landscape|Industry\s+Overview|$)/i);
+      const swotMatch = marketText.match(/SWOT\s+Analysis[:\s]*([\s\S]*?)(?=Market\s+Position|Competitive\s+Landscape|Industry\s+Overview|$)/i);
+      const marketPositionMatch = marketText.match(/Market\s+Position[:\s]*([\s\S]*?)(?=Competitive\s+Landscape|Industry\s+Overview|$)/i);
+      const competitiveLandscapeMatch = marketText.match(/Competitive\s+Landscape[:\s]*([\s\S]*?)(?=Industry\s+Overview|$)/i);
+      const industryOverviewMatch = marketText.match(/Industry\s+Overview[:\s]*([\s\S]*?)(?=$)/i);
+      
+      // Extract overview (first paragraph or sentence)
+      const overviewMatch = marketText.match(/^(.*?)(?=\n\n|\n[A-Z]|Competitors|SWOT|$)/i);
+      
+      const marketAnalysis: MarketAnalysisType = {
+        overview: overviewMatch ? overviewMatch[1].trim() : marketText.substring(0, 200),
+        competitors: []
+      };
+      
+      // Process competitors
+      if (competitorsMatch) {
+        const competitorsText = competitorsMatch[1].trim();
+        
+        // Check for structured competitor list with strengths/weaknesses
+        const structuredCompetitors = competitorsText.match(/([^:]+):\s*Strengths[:\s]*([\s\S]*?)Weaknesses[:\s]*([\s\S]*?)(?=\n\n[^:]+:|\n[^:]+:|$)/g);
+        
+        if (structuredCompetitors && structuredCompetitors.length > 0) {
+          // Parse structured competitors
+          const competitors = [];
+          
+          for (const comp of structuredCompetitors) {
+            const nameMatch = comp.match(/^([^:]+):/);
+            const strengthsMatch = comp.match(/Strengths[:\s]*([\s\S]*?)(?=Weaknesses)/i);
+            const weaknessesMatch = comp.match(/Weaknesses[:\s]*([\s\S]*?)(?=$)/i);
             
-            if (symbol) {
-                // Now get company overview
-                await alphaVantageRateLimiter.waitForSlot();
-                const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`;
-                
-                const overviewResponse = await retryWithBackoff<any>(async () => {
-                    const response = await fetch(overviewUrl);
-                    if (!response.ok) {
-                        throw new Error(`Alpha Vantage API error: ${response.status}`);
-                    }
-                    return await response.json();
-                });
-                
-                // If we got a valid overview, return it
-                if (overviewResponse?.Symbol) {
-                    return overviewResponse as OverviewResponse;
-                }
+            if (nameMatch) {
+              competitors.push({
+                name: nameMatch[1].trim(),
+                strengths: strengthsMatch ? strengthsMatch[1].trim() : undefined,
+                weaknesses: weaknessesMatch ? weaknessesMatch[1].trim() : undefined
+              });
             }
+          }
+          
+          marketAnalysis.competitors = competitors;
+        } else {
+          // Try to parse as simple list
+          const competitorsList = competitorsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+          if (competitorsList.length > 1) {
+            marketAnalysis.competitors = competitorsList.map(comp => comp.trim());
+          } else {
+            // Comma-separated list
+            marketAnalysis.competitors = competitorsText.split(',').map(comp => comp.trim());
+          }
         }
+      }
+      
+      // Process SWOT
+      if (swotMatch) {
+        const swotText = swotMatch[1].trim();
         
-        // If we couldn't get a valid overview, return the search response
-        return searchResponse as AlphaVantageResponse;
-    } catch (error) {
-        console.error('Error fetching company data:', error);
-        throw error;
-    }
-}
-
-// Enhanced news data function
-async function getNewsData(companyName: string, apiKey: string): Promise<NewsResponse | null> {
-    try {
-        const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(companyName)}&sortBy=relevancy&pageSize=15&apiKey=${apiKey}`;
-        const response = await fetch(newsUrl);
+        const strengthsMatch = swotText.match(/Strengths[:\s]*([\s\S]*?)(?=Weaknesses)/i);
+        const weaknessesMatch = swotText.match(/Weaknesses[:\s]*([\s\S]*?)(?=Opportunities)/i);
+        const opportunitiesMatch = swotText.match(/Opportunities[:\s]*([\s\S]*?)(?=Threats)/i);
+        const threatsMatch = swotText.match(/Threats[:\s]*([\s\S]*?)(?=$)/i);
         
-        if (!response.ok) {
-            throw new Error(`News API returned ${response.status}`);
-        }
-        
-        const data = await response.json() as NewsResponse;
-        
-        // Cache successful response (for a shorter time as news is time-sensitive)
-        if (data && Array.isArray(data.articles)) {
-            await apiCache.set(`news_${companyName.toLowerCase()}`, data, 1800000); // 30 minutes
-            return data;
-        }
-        
-        console.error("Invalid news API response format:", data);
-        return null;
-    } catch (error) {
-        console.error("Error fetching news data:", error);
-        return null;
-    }
-}
-
-// Enhanced SEC filings function
-async function getSECFilings(companyName: string, apiKey: string): Promise<SECApiResponse | null> {
-    try {
-        const url = `https://api.sec-api.io/filings?company=${encodeURIComponent(companyName)}&token=${apiKey}`;
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-            throw new Error(`SEC API error: ${response.status}`);
-        }
-        
-        const data = await response.json() as any;
-        
-        // Transform to our expected format
-        const result: SECApiResponse = {
-            filings: Array.isArray(data?.filings) 
-                ? data.filings.map((filing: any) => ({
-                    formType: filing.formType || '',
-                    filedAt: filing.filedAt || '',
-                    description: filing.description || '',
-                    linkToFilingDetails: filing.linkToFilingDetails || ''
-                  }))
-                : []
+        const swot: MarketAnalysisType['swot'] = {
+          strengths: [],
+          weaknesses: [],
+          opportunities: [],
+          threats: []
         };
         
-        // Cache successful response
-        await apiCache.set(`sec_${companyName.toLowerCase()}`, result);
-        return result;
-    } catch (error) {
-        console.error("Error fetching SEC filings:", error);
-        return null;
+        // Parse strengths
+        if (strengthsMatch) {
+          const strengthsText = strengthsMatch[1].trim();
+          const strengthsList = strengthsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+          swot.strengths = strengthsList.length > 1 ? strengthsList.map(s => s.trim()) : strengthsText;
+        }
+        
+        // Parse weaknesses
+        if (weaknessesMatch) {
+          const weaknessesText = weaknessesMatch[1].trim();
+          const weaknessesList = weaknessesText.split(/\n[•\-\*]\s+/).filter(Boolean);
+          swot.weaknesses = weaknessesList.length > 1 ? weaknessesList.map(w => w.trim()) : weaknessesText;
+        }
+        
+        // Parse opportunities
+        if (opportunitiesMatch) {
+          const opportunitiesText = opportunitiesMatch[1].trim();
+          const opportunitiesList = opportunitiesText.split(/\n[•\-\*]\s+/).filter(Boolean);
+          swot.opportunities = opportunitiesList.length > 1 ? opportunitiesList.map(o => o.trim()) : opportunitiesText;
+        }
+        
+        // Parse threats
+        if (threatsMatch) {
+          const threatsText = threatsMatch[1].trim();
+          const threatsList = threatsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+          swot.threats = threatsList.length > 1 ? threatsList.map(t => t.trim()) : threatsText;
+        }
+        
+        marketAnalysis.swot = swot;
+      }
+      
+      // Process market position
+      if (marketPositionMatch) {
+        marketAnalysis.marketPosition = marketPositionMatch[1].trim();
+      }
+      
+      // Process competitive landscape
+      if (competitiveLandscapeMatch) {
+        marketAnalysis.competitiveLandscape = competitiveLandscapeMatch[1].trim();
+      }
+      
+      // Process industry overview
+      if (industryOverviewMatch) {
+        marketAnalysis.industryOverview = industryOverviewMatch[1].trim();
+      }
+      
+      response.marketAnalysis = marketAnalysis;
+    } else {
+      logger.warn('Market Analysis section not found');
     }
+    
+    // Risk Assessment
+    const riskMatch = text.match(/Risk\s+Assessment[\s\S]*?(?=Recent\s+Developments|Conclusion|$)/i);
+    if (riskMatch) {
+      const riskText = riskMatch[0].replace(/Risk\s+Assessment[:\s]*/i, '').trim();
+      
+      // Extract risk factors and rating
+      const financialRisksMatch = riskText.match(/Financial\s+Risks[:\s]*([\s\S]*?)(?=Operational\s+Risks|Market\s+Risks|Regulatory\s+Risks|ESG\s+Considerations|Risk\s+Rating|$)/i);
+      const operationalRisksMatch = riskText.match(/Operational\s+Risks[:\s]*([\s\S]*?)(?=Market\s+Risks|Regulatory\s+Risks|ESG\s+Considerations|Financial\s+Risks|Risk\s+Rating|$)/i);
+      const marketRisksMatch = riskText.match(/Market\s+Risks[:\s]*([\s\S]*?)(?=Regulatory\s+Risks|ESG\s+Considerations|Financial\s+Risks|Operational\s+Risks|Risk\s+Rating|$)/i);
+      const regulatoryRisksMatch = riskText.match(/Regulatory\s+Risks[:\s]*([\s\S]*?)(?=ESG\s+Considerations|Financial\s+Risks|Operational\s+Risks|Market\s+Risks|Risk\s+Rating|$)/i);
+      const esgConsiderationsMatch = riskText.match(/ESG\s+Considerations[:\s]*([\s\S]*?)(?=Financial\s+Risks|Operational\s+Risks|Market\s+Risks|Regulatory\s+Risks|Risk\s+Rating|$)/i);
+      const riskRatingMatch = riskText.match(/Risk\s+Rating[:\s]*([A-Za-z]+)/i);
+      
+      // Extract overview (first paragraph or sentence)
+      const overviewMatch = riskText.match(/^(.*?)(?=\n\n|\n[A-Z]|Financial\s+Risks|Operational\s+Risks|Market\s+Risks|Regulatory\s+Risks|ESG\s+Considerations|Risk\s+Rating|$)/i);
+      
+      const riskAssessment: RiskAssessmentType = {
+        overview: overviewMatch ? overviewMatch[1].trim() : riskText.substring(0, 200),
+        riskFactors: {
+          financial: [],
+          operational: [],
+          market: [],
+          regulatory: []
+        },
+        riskRating: 'medium' // Default
+      };
+      
+      // Process financial risks
+      if (financialRisksMatch) {
+        const financialRisksText = financialRisksMatch[1].trim();
+        riskAssessment.financialRisks = financialRisksText;
+        
+        // Extract bullet points if present
+        const financialRisksList = financialRisksText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (financialRisksList.length > 1) {
+          riskAssessment.riskFactors.financial = financialRisksList.map(risk => risk.trim());
+        } else {
+          // If not bullet points, use sentences as separate risks
+          riskAssessment.riskFactors.financial = financialRisksText
+            .split(/(?<=\.)\s+/)
+            .filter(sentence => sentence.trim().length > 10)
+            .map(sentence => sentence.trim());
+        }
+      }
+      
+      // Process operational risks
+      if (operationalRisksMatch) {
+        const operationalRisksText = operationalRisksMatch[1].trim();
+        riskAssessment.operationalRisks = operationalRisksText;
+        
+        // Extract bullet points if present
+        const operationalRisksList = operationalRisksText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (operationalRisksList.length > 1) {
+          riskAssessment.riskFactors.operational = operationalRisksList.map(risk => risk.trim());
+        } else {
+          // If not bullet points, use sentences as separate risks
+          riskAssessment.riskFactors.operational = operationalRisksText
+            .split(/(?<=\.)\s+/)
+            .filter(sentence => sentence.trim().length > 10)
+            .map(sentence => sentence.trim());
+        }
+      }
+      
+      // Process market risks
+      if (marketRisksMatch) {
+        const marketRisksText = marketRisksMatch[1].trim();
+        riskAssessment.marketRisks = marketRisksText;
+        
+        // Extract bullet points if present
+        const marketRisksList = marketRisksText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (marketRisksList.length > 1) {
+          riskAssessment.riskFactors.market = marketRisksList.map(risk => risk.trim());
+        } else {
+          // If not bullet points, use sentences as separate risks
+          riskAssessment.riskFactors.market = marketRisksText
+            .split(/(?<=\.)\s+/)
+            .filter(sentence => sentence.trim().length > 10)
+            .map(sentence => sentence.trim());
+        }
+      }
+      
+      // Process regulatory risks
+      if (regulatoryRisksMatch) {
+        const regulatoryRisksText = regulatoryRisksMatch[1].trim();
+        riskAssessment.regulatoryRisks = regulatoryRisksText;
+        
+        // Extract bullet points if present
+        const regulatoryRisksList = regulatoryRisksText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        if (regulatoryRisksList.length > 1) {
+          riskAssessment.riskFactors.regulatory = regulatoryRisksList.map(risk => risk.trim());
+        } else {
+          // If not bullet points, use sentences as separate risks
+          riskAssessment.riskFactors.regulatory = regulatoryRisksText
+            .split(/(?<=\.)\s+/)
+            .filter(sentence => sentence.trim().length > 10)
+            .map(sentence => sentence.trim());
+        }
+      }
+      
+      // Process ESG considerations
+      if (esgConsiderationsMatch) {
+        const esgConsiderationsText = esgConsiderationsMatch[1].trim();
+        riskAssessment.esgConsiderations = esgConsiderationsText;
+        
+        // Add ESG risks if not already present
+        if (!riskAssessment.riskFactors.esg) {
+          const esgRisksList = esgConsiderationsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+          if (esgRisksList.length > 1) {
+            riskAssessment.riskFactors.esg = esgRisksList.map(risk => risk.trim());
+          } else {
+            // If not bullet points, use sentences as separate risks
+            riskAssessment.riskFactors.esg = esgConsiderationsText
+              .split(/(?<=\.)\s+/)
+              .filter(sentence => sentence.trim().length > 10)
+              .map(sentence => sentence.trim());
+          }
+        }
+      }
+      
+      // Process risk rating
+      if (riskRatingMatch) {
+        const ratingText = riskRatingMatch[1].toLowerCase();
+        if (ratingText.includes('high')) {
+          riskAssessment.riskRating = 'high';
+        } else if (ratingText.includes('low')) {
+          riskAssessment.riskRating = 'low';
+        } else {
+          riskAssessment.riskRating = 'medium';
+        }
+      } else {
+        // Infer risk rating from the text if not explicitly stated
+        let riskLevel = 0;
+        
+        // Count high-risk keywords
+        const highRiskKeywords = ['significant', 'severe', 'critical', 'major', 'high', 'substantial'];
+        const lowRiskKeywords = ['minimal', 'minor', 'low', 'manageable', 'limited', 'negligible'];
+        
+        for (const keyword of highRiskKeywords) {
+          if (riskText.toLowerCase().includes(keyword)) riskLevel++;
+        }
+        
+        for (const keyword of lowRiskKeywords) {
+          if (riskText.toLowerCase().includes(keyword)) riskLevel--;
+        }
+        
+        // Count risk factors - more factors often indicate higher risk
+        const totalRiskFactors = (
+          riskAssessment.riskFactors.financial.length +
+          riskAssessment.riskFactors.operational.length +
+          riskAssessment.riskFactors.market.length +
+          riskAssessment.riskFactors.regulatory.length
+        );
+        
+        if (totalRiskFactors > 15) riskLevel += 2;
+        else if (totalRiskFactors > 10) riskLevel += 1;
+        
+        // Assign risk rating based on score
+        if (riskLevel > 2) {
+          riskAssessment.riskRating = 'high';
+        } else if (riskLevel < -1) {
+          riskAssessment.riskRating = 'low';
+        } else {
+          riskAssessment.riskRating = 'medium';
+        }
+      }
+      
+      response.riskAssessment = riskAssessment;
+    } else {
+      logger.warn('Risk Assessment section not found');
+    }
+    
+    // Recent Developments
+    const developmentsMatch = text.match(/Recent\s+Developments[\s\S]*?(?=Conclusion|$)/i);
+    if (developmentsMatch) {
+      const developmentsText = developmentsMatch[0].replace(/Recent\s+Developments[:\s]*/i, '').trim();
+      
+      // Extract news, filings, and strategic events
+      const newsMatch = developmentsText.match(/News[:\s]*([\s\S]*?)(?=Filings|Strategic\s+Developments|Management\s+Changes|$)/i);
+      const filingsMatch = developmentsText.match(/Filings[:\s]*([\s\S]*?)(?=News|Strategic\s+Developments|Management\s+Changes|$)/i);
+      const strategicMatch = developmentsText.match(/Strategic\s+Developments[:\s]*([\s\S]*?)(?=News|Filings|Management\s+Changes|$)/i);
+      const managementMatch = developmentsText.match(/Management\s+Changes[:\s]*([\s\S]*?)(?=News|Filings|Strategic\s+Developments|$)/i);
+      
+      const recentDevelopments: RecentDevelopmentsType = {
+        news: [],
+        events: [],
+        filings: []
+      };
+      
+      // Process news items
+      if (newsMatch) {
+        const newsText = newsMatch[1].trim();
+        const newsItems = newsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        
+        if (newsItems.length > 0) {
+          recentDevelopments.news = newsItems.map(item => {
+            // Try to extract title, date, and description
+            const titleMatch = item.match(/^([^(]+?)(?:\s*\(([^)]+)\))?\s*(?::|–|-)?\s*(.*)/);
+            
+            if (titleMatch) {
+              const [, title, date, description] = titleMatch;
+              return {
+                title: title.trim(),
+                description: description ? description.trim() : '',
+                url: '',
+                publishedAt: date ? date.trim() : '',
+                date: date ? date.trim() : '',
+                source: { name: 'AI Analysis' }
+              };
+            }
+            
+            // Fallback if parsing fails
+            return {
+              title: item.trim(),
+              description: '',
+              url: '',
+              publishedAt: '',
+              date: '',
+              source: { name: 'AI Analysis' }
+            };
+          });
+        }
+      }
+      
+      // Process filings
+      if (filingsMatch) {
+        const filingsText = filingsMatch[1].trim();
+        const filingItems = filingsText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        
+        if (filingItems.length > 0) {
+          recentDevelopments.filings = filingItems.map(item => {
+            // Try to extract type, date, and description
+            const filingMatch = item.match(/^([^(]+?)(?:\s*\(([^)]+)\))?\s*(?::|–|-)?\s*(.*)/);
+            
+            if (filingMatch) {
+              const [, type, date, description] = filingMatch;
+              return {
+                type: type.trim(),
+                date: date ? date.trim() : new Date().toISOString().split('T')[0],
+                description: description ? description.trim() : '',
+                url: ''
+              };
+            }
+            
+            // Fallback if parsing fails
+            return {
+              type: 'Unknown Filing',
+              date: new Date().toISOString().split('T')[0],
+              description: item.trim(),
+              url: ''
+            };
+          });
+        }
+      }
+      
+      // Process strategic developments
+      if (strategicMatch) {
+        const strategicText = strategicMatch[1].trim();
+        const strategicItems = strategicText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        
+        if (strategicItems.length > 0) {
+          // Check if items look structured enough to be objects
+          const hasStructuredFormat = strategicItems.some(item => 
+            item.includes('(') && item.includes(')') && (item.includes(':') || item.includes('-') || item.includes('–'))
+          );
+          
+          if (hasStructuredFormat) {
+            // Parse as structured objects
+            const structuredStrategic = strategicItems.map(item => {
+              const titleMatch = item.match(/^([^(]+?)(?:\s*\(([^)]+)\))?\s*(?::|–|-)?\s*(.*)/);
+              
+              if (titleMatch) {
+                const [, title, date, description] = titleMatch;
+                return {
+                  title: title.trim(),
+                  date: date ? date.trim() : new Date().toISOString().split('T')[0],
+                  description: description ? description.trim() : '',
+                  summary: description ? description.substring(0, 100).trim() + (description.length > 100 ? '...' : '') : ''
+                };
+              }
+              
+              // Fallback
+              return {
+                title: item.trim(),
+                date: new Date().toISOString().split('T')[0],
+                description: '',
+                summary: ''
+              };
+            });
+            
+            recentDevelopments.strategic = structuredStrategic;
+          } else {
+            // Parse as simple string array
+            recentDevelopments.strategic = strategicItems.map(item => item.trim());
+          }
+        }
+      }
+      
+      // Process management changes
+      if (managementMatch) {
+        const managementText = managementMatch[1].trim();
+        const managementItems = managementText.split(/\n[•\-\*]\s+/).filter(Boolean);
+        
+        if (managementItems.length > 0) {
+          recentDevelopments.management = managementItems.map(item => item.trim());
+        }
+      }
+      
+      // Add events from all sections for easy access
+      const allEvents: string[] = [];
+      
+      // Add significant news as events
+      recentDevelopments.news.forEach(news => {
+        if (news.title) {
+          allEvents.push(`News: ${news.title}${news.date ? ` (${news.date})` : ''}`);
+        }
+      });
+      
+      // Add filings as events
+      if (recentDevelopments.filings) {
+        recentDevelopments.filings.forEach(filing => {
+          if (filing.type) {
+            allEvents.push(`Filing: ${filing.type}${filing.date ? ` (${filing.date})` : ''}`);
+          }
+        });
+      }
+      
+      // Add strategic developments as events
+      if (recentDevelopments.strategic) {
+        if (Array.isArray(recentDevelopments.strategic)) {
+          if (typeof recentDevelopments.strategic[0] === 'string') {
+            // String array
+            recentDevelopments.strategic.forEach(item => {
+              allEvents.push(`Strategic: ${item}`);
+            });
+          } else {
+            // Object array
+            (recentDevelopments.strategic as Array<{title: string, date: string}>).forEach(item => {
+              allEvents.push(`Strategic: ${item.title}${item.date ? ` (${item.date})` : ''}`);
+            });
+          }
+        } else {
+          // Single string
+          allEvents.push(`Strategic: ${recentDevelopments.strategic}`);
+        }
+      }
+      
+      // Add management changes as events
+      if (recentDevelopments.management) {
+        recentDevelopments.management.forEach(item => {
+          allEvents.push(`Management: ${item}`);
+        });
+      }
+      
+      if (allEvents.length > 0) {
+        recentDevelopments.events = allEvents;
+      }
+      
+      response.recentDevelopments = recentDevelopments;
+    } else {
+      logger.warn('Recent Developments section not found');
+    }
+    
+    // Extract conclusion if present
+    const conclusionMatch = text.match(/Conclusion[:\s]*([\s\S]*?)(?=$)/i);
+    if (conclusionMatch) {
+      response.conclusion = conclusionMatch[1].trim();
+    }
+    
+    return response;
+  } catch (error) {
+    logger.error('Error parsing AI response', error);
+    
+    // Create a minimal valid response
+    const fallbackResponse: DueDiligenceResponse = {
+      companyName,
+      ticker: companyData.Symbol || companyData.ticker,
+      timestamp: new Date().toISOString(),
+      companyData,
+      executiveSummary: { 
+        overview: `Due diligence report for ${companyName}. Error occurred during parsing.`,
+        keyFindings: ['Error processing response', error instanceof Error ? error.message : String(error)]
+      },
+      financialAnalysis: { overview: 'Financial analysis unavailable due to processing error.', metrics: {}, trends: [] },
+      marketAnalysis: { overview: 'Market analysis unavailable due to processing error.', competitors: [] },
+      riskAssessment: { 
+        overview: 'Risk assessment unavailable due to processing error.', 
+        riskFactors: {
+          financial: [],
+          operational: [],
+          market: [],
+          regulatory: []
+        },
+        riskRating: 'medium'
+      },
+      generatedAt: new Date().toISOString()
+    };
+    
+    return fallbackResponse;
+  }
 }
 
-// Function to parse AI response into structured format
-function parseAIResponse(text: string): DueDiligenceResponse {
-    // Initialize the report structure
-    const report: DueDiligenceResponse = {
-        companyName: '',
-        timestamp: new Date().toISOString(),
-        executiveSummary: {
-            overview: '',
-            keyFindings: [],
-            riskRating: 'Medium',
-            recommendation: ''
-        },
-        financialAnalysis: {
-            metrics: {},
-            trends: [],
-            strengths: [],
-            weaknesses: []
-        },
-        marketAnalysis: {
-            position: '',
-            competitors: [],
-            marketShare: '',
-            swot: {
-                strengths: [],
-                weaknesses: [],
-                opportunities: [],
-                threats: []
-            }
-        },
-        riskAssessment: {
+/**
+ * Validate and enhance a parsed response object
+ * @param parsedResponse The parsed response from AI
+ * @param companyName Company name
+ * @param companyData Company data
+ * @returns Enhanced and validated response
+ */
+function validateAndEnhanceResponse(
+  parsedResponse: any, 
+  companyName: string, 
+  companyData: CompanyData
+): DueDiligenceResponse {
+  logger.debug('Validating and enhancing parsed response');
+  
+  // Start with a basic valid response object
+  const validatedResponse: DueDiligenceResponse = {
+    companyName: companyName,
+    ticker: companyData.Symbol || companyData.ticker,
+    timestamp: new Date().toISOString(),
+    companyData: companyData,
+    executiveSummary: { overview: '' },
+    financialAnalysis: { overview: '', metrics: {}, trends: [] },
+    marketAnalysis: { overview: '', competitors: [] },
+    riskAssessment: { 
+      overview: '', 
+      riskFactors: {
+        financial: [],
+        operational: [],
+        market: [],
+        regulatory: []
+      },
+      riskRating: 'medium'
+    },
+    generatedAt: new Date().toISOString(),
+    metadata: {
+      analysisDepth: 'standard',
+      focusAreas: ['financial', 'market', 'risk'],
+      dataSources: ['AI Analysis']
+    }
+  };
+  
+  try {
+    // 1. Enhance with company data
+    if (parsedResponse.companyData) {
+      // Merge provided companyData with any additional data from the response
+      validatedResponse.companyData = {
+        ...companyData,
+        ...parsedResponse.companyData
+      };
+    }
+    
+    // 2. Add or enhance executive summary
+    if (parsedResponse.executiveSummary) {
+      if (typeof parsedResponse.executiveSummary === 'string') {
+        validatedResponse.executiveSummary = {
+          overview: parsedResponse.executiveSummary
+        };
+      } else {
+        validatedResponse.executiveSummary = {
+          overview: parsedResponse.executiveSummary.overview || `Overview for ${companyName}`,
+          keyFindings: parsedResponse.executiveSummary.keyFindings,
+          riskRating: parsedResponse.executiveSummary.riskRating,
+          recommendation: parsedResponse.executiveSummary.recommendation
+        };
+      }
+    }
+    
+    // 3. Add key findings if provided
+    if (parsedResponse.keyFindings && Array.isArray(parsedResponse.keyFindings)) {
+      validatedResponse.keyFindings = parsedResponse.keyFindings;
+    }
+    
+    // 4. Add or enhance financial analysis
+    if (parsedResponse.financialAnalysis) {
+      if (typeof parsedResponse.financialAnalysis === 'string') {
+        validatedResponse.financialAnalysis = {
+          overview: parsedResponse.financialAnalysis,
+          metrics: {},
+          trends: []
+        };
+      } else {
+        validatedResponse.financialAnalysis = {
+          overview: parsedResponse.financialAnalysis.overview || 'Financial overview not available',
+          metrics: parsedResponse.financialAnalysis.metrics || {},
+          trends: parsedResponse.financialAnalysis.trends || [],
+          ratios: parsedResponse.financialAnalysis.ratios,
+          strengths: parsedResponse.financialAnalysis.strengths,
+          weaknesses: parsedResponse.financialAnalysis.weaknesses,
+          revenueGrowth: parsedResponse.financialAnalysis.revenueGrowth,
+          profitabilityMetrics: parsedResponse.financialAnalysis.profitabilityMetrics,
+          balanceSheetAnalysis: parsedResponse.financialAnalysis.balanceSheetAnalysis,
+          cashFlowAnalysis: parsedResponse.financialAnalysis.cashFlowAnalysis
+        };
+      }
+    }
+    
+    // 5. Add or enhance market analysis
+    if (parsedResponse.marketAnalysis) {
+      if (typeof parsedResponse.marketAnalysis === 'string') {
+        validatedResponse.marketAnalysis = {
+          overview: parsedResponse.marketAnalysis,
+          competitors: []
+        };
+      } else {
+        validatedResponse.marketAnalysis = {
+          overview: parsedResponse.marketAnalysis.overview || 'Market overview not available',
+          competitors: parsedResponse.marketAnalysis.competitors || [],
+          swot: parsedResponse.marketAnalysis.swot,
+          marketPosition: parsedResponse.marketAnalysis.marketPosition,
+          position: parsedResponse.marketAnalysis.position,
+          industryOverview: parsedResponse.marketAnalysis.industryOverview,
+          competitiveLandscape: parsedResponse.marketAnalysis.competitiveLandscape,
+          marketShare: parsedResponse.marketAnalysis.marketShare,
+          competitiveAdvantages: parsedResponse.marketAnalysis.competitiveAdvantages
+        };
+      }
+    }
+    
+    // 6. Add or enhance risk assessment
+    if (parsedResponse.riskAssessment) {
+      if (typeof parsedResponse.riskAssessment === 'string') {
+        validatedResponse.riskAssessment = {
+          overview: parsedResponse.riskAssessment,
+          riskFactors: {
             financial: [],
             operational: [],
             market: [],
-            regulatory: [],
-            esg: []
-        },
-        recentDevelopments: {
-            news: [],
-            filings: [],
-            management: [],
-            strategic: []
+            regulatory: []
+          },
+          riskRating: 'medium'
+        };
+      } else {
+        // Ensure valid risk rating
+        let riskRating: 'low' | 'medium' | 'high' = 'medium';
+        if (parsedResponse.riskAssessment.riskRating) {
+          const rating = parsedResponse.riskAssessment.riskRating.toLowerCase();
+          if (rating === 'low' || rating === 'high') {
+            riskRating = rating as 'low' | 'high';
+          }
         }
-    };
-
-    // Extract sections using regex
-    const sectionPattern = /\d+\. ([^\n]+)\n([\s\S]+?)(?=\n\d+\. |$)/g;
-    const sections: Record<string, string> = {};
-    let match;
-    
-    while ((match = sectionPattern.exec(text)) !== null) {
-        sections[match[1].trim()] = match[2].trim();
+        
+        validatedResponse.riskAssessment = {
+          overview: parsedResponse.riskAssessment.overview || 'Risk overview not available',
+          riskFactors: {
+            financial: Array.isArray(parsedResponse.riskAssessment.riskFactors?.financial) 
+              ? parsedResponse.riskAssessment.riskFactors.financial 
+              : [],
+            operational: Array.isArray(parsedResponse.riskAssessment.riskFactors?.operational) 
+              ? parsedResponse.riskAssessment.riskFactors.operational 
+              : [],
+            market: Array.isArray(parsedResponse.riskAssessment.riskFactors?.market) 
+              ? parsedResponse.riskAssessment.riskFactors.market 
+              : [],
+            regulatory: Array.isArray(parsedResponse.riskAssessment.riskFactors?.regulatory) 
+              ? parsedResponse.riskAssessment.riskFactors.regulatory 
+              : [],
+            esg: Array.isArray(parsedResponse.riskAssessment.riskFactors?.esg) 
+              ? parsedResponse.riskAssessment.riskFactors.esg 
+              : undefined
+          },
+          riskRating,
+          financial: parsedResponse.riskAssessment.financial,
+          operational: parsedResponse.riskAssessment.operational,
+          market: parsedResponse.riskAssessment.market,
+          regulatory: parsedResponse.riskAssessment.regulatory,
+          esgConsiderations: parsedResponse.riskAssessment.esgConsiderations,
+          financialRisks: parsedResponse.riskAssessment.financialRisks,
+          operationalRisks: parsedResponse.riskAssessment.operationalRisks,
+          marketRisks: parsedResponse.riskAssessment.marketRisks,
+          regulatoryRisks: parsedResponse.riskAssessment.regulatoryRisks
+        };
+      }
     }
     
-    // Extract company name
-    const companyNameMatch = text.match(/Due Diligence Report: ([^\n]+)/);
-    if (companyNameMatch) {
-        report.companyName = companyNameMatch[1].trim();
+    // 7. Add or enhance recent developments
+    if (parsedResponse.recentDevelopments) {
+      const recentDevelopments: RecentDevelopmentsType = {
+        news: [],
+        events: [],
+        filings: []
+      };
+      
+      // Process news
+      if (Array.isArray(parsedResponse.recentDevelopments.news)) {
+        recentDevelopments.news = parsedResponse.recentDevelopments.news.map((news: any) => {
+          return {
+            title: news.title || 'Untitled News',
+            description: news.description || '',
+            url: news.url || '',
+            publishedAt: news.publishedAt || news.date || new Date().toISOString(),
+            date: news.date || news.publishedAt || new Date().toISOString(),
+            source: news.source || { name: 'AI Analysis' },
+            summary: news.summary
+          };
+        });
+      }
+      
+      // Process events
+      if (Array.isArray(parsedResponse.recentDevelopments.events)) {
+        recentDevelopments.events = parsedResponse.recentDevelopments.events;
+      }
+      
+      // Process filings
+      if (Array.isArray(parsedResponse.recentDevelopments.filings)) {
+        recentDevelopments.filings = parsedResponse.recentDevelopments.filings.map((filing: any) => {
+          return {
+            type: filing.type || filing.title || 'Unknown Filing',
+            date: filing.date || new Date().toISOString().split('T')[0],
+            description: filing.description || '',
+            url: filing.url || '',
+            title: filing.title
+          };
+        });
+      }
+      
+      // Process strategic developments
+      if (parsedResponse.recentDevelopments.strategic) {
+        recentDevelopments.strategic = parsedResponse.recentDevelopments.strategic;
+      }
+      
+      // Process management changes
+      if (Array.isArray(parsedResponse.recentDevelopments.management)) {
+        recentDevelopments.management = parsedResponse.recentDevelopments.management;
+      }
+      
+      validatedResponse.recentDevelopments = recentDevelopments;
     }
     
-    // Parse Executive Summary
-    if (sections["Executive Summary"]) {
-        const content = sections["Executive Summary"];
-        
-        // Extract overview
-        const overviewMatch = content.match(/^([\s\S]+?)(?=\n\n|\nKey Findings)/i);
-        if (overviewMatch) {
-            report.executiveSummary.overview = overviewMatch[1].trim();
-        }
-        
-        // Extract key findings
-        const findingsMatch = content.match(/Key Findings[^:]*:([\s\S]+?)(?=\n\nRisk Rating|\n\nRecommendation|$)/i);
-        if (findingsMatch) {
-            report.executiveSummary.keyFindings = findingsMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Extract risk rating
-        const riskMatch = content.match(/Risk Rating[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (riskMatch) {
-            const riskText = riskMatch[1].trim().toLowerCase();
-            if (riskText.includes('high')) {
-                report.executiveSummary.riskRating = 'High';
-            } else if (riskText.includes('low')) {
-                report.executiveSummary.riskRating = 'Low';
-            } else {
-                report.executiveSummary.riskRating = 'Medium';
-            }
-        }
-        
-        // Extract recommendation
-        const recoMatch = content.match(/Recommendation[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (recoMatch) {
-            report.executiveSummary.recommendation = recoMatch[1].trim();
-        }
+    // 8. Add conclusion if present
+    if (parsedResponse.conclusion) {
+      validatedResponse.conclusion = parsedResponse.conclusion;
     }
     
-    // Parse Financial Analysis
-    if (sections["Financial Analysis"]) {
-        const content = sections["Financial Analysis"];
+    // 9. Add or enhance metadata
+    if (parsedResponse.metadata) {
+      const validDepths = ['basic', 'standard', 'comprehensive'];
+      const analysisDepth = validDepths.includes(parsedResponse.metadata.analysisDepth) 
+        ? parsedResponse.metadata.analysisDepth 
+        : 'standard';
         
-        // Extract metrics
-        const metricsMatch = content.match(/Key Metrics[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (metricsMatch) {
-            const metricsText = metricsMatch[1];
-            const metricLines = metricsText.split('\n').filter(line => line.includes(':'));
-            
-            metricLines.forEach(line => {
-                const [key, value] = line.split(':').map(part => part.trim());
-                if (key && value) {
-                    report.financialAnalysis.metrics[key] = value;
-                }
-            });
-        }
-        
-        // Extract trends
-        const trendsMatch = content.match(/Trends[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (trendsMatch) {
-            report.financialAnalysis.trends = trendsMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Extract strengths
-        const strengthsMatch = content.match(/Strengths[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (strengthsMatch) {
-            report.financialAnalysis.strengths = strengthsMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Extract weaknesses
-        const weaknessesMatch = content.match(/Weaknesses[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (weaknessesMatch) {
-            report.financialAnalysis.weaknesses = weaknessesMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
+      validatedResponse.metadata = {
+        analysisDepth: analysisDepth as 'basic' | 'standard' | 'comprehensive',
+        focusAreas: Array.isArray(parsedResponse.metadata.focusAreas) 
+          ? parsedResponse.metadata.focusAreas 
+          : ['financial', 'market', 'risk'],
+        dataSources: Array.isArray(parsedResponse.metadata.dataSources) 
+          ? parsedResponse.metadata.dataSources 
+          : ['AI Analysis']
+      };
     }
     
-    // Parse Market Analysis
-    if (sections["Market Analysis"]) {
-        const content = sections["Market Analysis"];
-        
-        // Extract market position
-        const positionMatch = content.match(/^([\s\S]+?)(?=\n\n|\nCompetitors)/i);
-        if (positionMatch) {
-            report.marketAnalysis.position = positionMatch[1].trim();
-        }
-        
-        // Extract competitors
-        const competitorsMatch = content.match(/Competitors[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (competitorsMatch) {
-            report.marketAnalysis.competitors = competitorsMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Extract market share
-        const shareMatch = content.match(/Market Share[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (shareMatch) {
-            report.marketAnalysis.marketShare = shareMatch[1].trim();
-        }
-        
-        // Extract SWOT
-        const swotMatch = content.match(/SWOT Analysis[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (swotMatch) {
-            const swotText = swotMatch[1];
-            
-            // Strengths
-            const swotStrengthsMatch = swotText.match(/Strengths[^:]*:([\s\S]+?)(?=\n\nWeaknesses|\n\n[A-Z]|$)/i);
-            if (swotStrengthsMatch) {
-                report.marketAnalysis.swot.strengths = swotStrengthsMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Weaknesses
-            const swotWeaknessesMatch = swotText.match(/Weaknesses[^:]*:([\s\S]+?)(?=\n\nOpportunities|\n\n[A-Z]|$)/i);
-            if (swotWeaknessesMatch) {
-                report.marketAnalysis.swot.weaknesses = swotWeaknessesMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Opportunities
-            const swotOpportunitiesMatch = swotText.match(/Opportunities[^:]*:([\s\S]+?)(?=\n\nThreats|\n\n[A-Z]|$)/i);
-            if (swotOpportunitiesMatch) {
-                report.marketAnalysis.swot.opportunities = swotOpportunitiesMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-            
-            // Threats
-            const swotThreatsMatch = swotText.match(/Threats[^:]*:([\s\S]+?)(?=\n\n|$)/i);
-            if (swotThreatsMatch) {
-                report.marketAnalysis.swot.threats = swotThreatsMatch[1]
-                    .split(/\n[•-]\s*/)
-                    .map(item => item.trim())
-                    .filter(Boolean);
-            }
-        }
-    }
+    // 10. Add generation timestamp
+    validatedResponse.generatedAt = parsedResponse.generatedAt || new Date().toISOString();
     
-    // Parse Risk Assessment
-    if (sections["Risk Assessment"]) {
-        const content = sections["Risk Assessment"];
-        
-        // Financial risks
-        const financialMatch = content.match(/Financial Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (financialMatch) {
-            report.riskAssessment.financial = financialMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Operational risks
-        const operationalMatch = content.match(/Operational Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (operationalMatch) {
-            report.riskAssessment.operational = operationalMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Market risks
-        const marketMatch = content.match(/Market Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (marketMatch) {
-            report.riskAssessment.market = marketMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // Regulatory risks
-        const regulatoryMatch = content.match(/Regulatory Risks[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (regulatoryMatch) {
-            report.riskAssessment.regulatory = regulatoryMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-        
-        // ESG considerations
-        const esgMatch = content.match(/ESG considerations[^:]*:([\s\S]+?)(?=\n\n|\n[A-Z]|$)/i);
-        if (esgMatch) {
-            report.riskAssessment.esg = esgMatch[1]
-                .split(/\n[•-]\s*/)
-                .map(item => item.trim())
-                .filter(Boolean);
-        }
-    }
+    return validatedResponse;
+  } catch (error) {
+    logger.error('Error validating AI response', error);
     
-    return report;
+    // Return the basic valid response if validation fails
+    return validatedResponse;
+  }
 }
 
-// Update the generateDueDiligence function
-export const generateDueDiligence = onRequest({
+/**
+ * Helper to call AIML API with robust error handling and rate limiting
+ * @param prompt The prompt to send to the AI
+ * @param apiKey API key for authentication
+ * @returns Generated content from AI
+ */
+async function generateAIMLContent(
+  prompt: string, 
+  apiKey: string, 
+  options: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    retries?: number;
+    timeout?: number;
+  } = {}
+): Promise<string> {
+  const {
+    model = 'gpt-4',
+    temperature = 0.7,
+    maxTokens = 4096,
+    retries = 3,
+    timeout = 60000
+  } = options;
+  
+  // Implement retry logic
+  let lastError: Error | null = null;
+  let waitTime = 1000; // Start with 1s delay
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // Add request timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(AIML_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature,
+          max_tokens: maxTokens
+        }),
+        signal: controller.signal
+      });
+      
+      // Clear timeout
+      clearTimeout(timeoutId);
+      
+      // Handle rate limiting
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : waitTime;
+        logger.warn(`Rate limited. Retrying after ${delay / 1000}s`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        // Double the wait time for next attempt (exponential backoff)
+        waitTime = Math.min(waitTime * 2, 30000); // Cap at 30s
+        continue;
+      }
+      
+      const data = await response.json() as any;
+      
+      if (!response.ok) {
+        throw new Error(data.error?.message || `API error: ${response.status}`);
+      }
+      
+      if (!data.choices || !data.choices.length || !data.choices[0].message?.content) {
+        throw new Error('Invalid response format from AI API');
+      }
+      
+      return data.choices[0].message.content;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Don't retry if it's a timeout abort or a validation error
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        logger.error('Request timeout', error);
+        throw new Error(`Request timed out after ${timeout / 1000}s`);
+      }
+      
+      if (attempt >= retries) {
+        logger.error(`Failed after ${retries} attempts`, error);
+        break;
+      }
+      
+      // Exponential backoff
+      waitTime = Math.min(waitTime * 2, 30000); // Cap at 30s
+      logger.warn(`Attempt ${attempt + 1} failed. Retrying in ${waitTime / 1000}s`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
+  
+  throw lastError || new Error('Failed to generate content after multiple attempts');
+}
+
+// Main function handler
+async function handleDueDiligenceRequest(req: any, res: any) {
+  // Initialize local storage for cleanup and partial data
+  res.locals = {
+    cleanup: null,
+    partialData: null,
+    startTime: Date.now()
+  };
+  
+  try {
+    // Validate authentication
+    try {
+      await validateAuth(req, res);
+    } catch (authError) {
+      throw new DueDiligenceError(
+        'Authentication failed. Please provide valid credentials.',
+        'auth_error',
+        401,
+        authError instanceof Error ? authError : new Error(String(authError))
+      );
+    }
+
+    // Validate request data
+    // Validate request data
+    const data = req.body;
+    if (!data || typeof data !== 'object') {
+      throw new DueDiligenceError(
+        'Invalid request body. Expected JSON object.',
+        'validation_error',
+        400,
+        new Error('Request body is not a valid JSON object')
+      );
+    }
+    
+    if (!data.companyName || typeof data.companyName !== 'string' || data.companyName.trim().length === 0) {
+      throw new DueDiligenceError(
+        'Company name is required',
+        'validation_error',
+        400,
+        new Error('Missing or invalid company name')
+      );
+    }
+    // Prepare company data for analysis
+    const companyData: CompanyData = {
+      Name: data.companyName,
+      ticker: data.ticker,
+      ...(data.financialData || {})
+    };
+    
+    // Sanitize company name and ticker to prevent injection
+    const sanitizedCompanyName = companyData.Name.replace(/[^\w\s\-\.,&]/g, '').trim();
+    const sanitizedTicker = companyData.ticker ? companyData.ticker.replace(/[^\w\-\.]/g, '').trim() : undefined;
+    
+    if (sanitizedCompanyName !== companyData.Name) {
+      logger.warn(`Company name was sanitized from "${companyData.Name}" to "${sanitizedCompanyName}"`);
+      companyData.Name = sanitizedCompanyName;
+    }
+    
+    if (sanitizedTicker !== companyData.ticker && companyData.ticker) {
+      logger.warn(`Ticker was sanitized from "${companyData.ticker}" to "${sanitizedTicker}"`);
+      companyData.ticker = sanitizedTicker;
+    }
+    
+    // Check for rate limiting
+    const userId = req.headers.authorization || req.ip || 'anonymous';
+    const db = getFirestore();
+    
+    // Get recent requests from this user (last hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentRequestsQuery = await db.collection('reportHistory')
+      .where('userId', '==', userId)
+      .where('timestamp', '>=', oneHourAgo.toISOString())
+      .get();
+    
+    // Apply rate limiting: 10 requests per hour for anonymous, 30 for authenticated
+    const isAuthenticated = !!req.headers.authorization;
+    const requestLimit = isAuthenticated ? 30 : 10;
+    
+    if (recentRequestsQuery.size >= requestLimit) {
+      logger.warn(`Rate limit exceeded for user ${userId}: ${recentRequestsQuery.size} requests in the last hour`);
+      throw new DueDiligenceError(
+        'Rate limit exceeded',
+        'rate_limit',
+        429,
+        new Error(`You can only make ${requestLimit} requests per hour. Please try again later.`)
+      );
+    }
+    
+    // Add a cleanup function to release the rate limit on error if needed
+    const originalCleanup = res.locals.cleanup;
+    res.locals.cleanup = async () => {
+      if (originalCleanup) await originalCleanup();
+      // If needed, we could implement rate limit release logic here
+    };
+    
+    // First check if we have a recent report for this company
+    if (data.allowCached !== false) { // Default to allowing cached reports unless explicitly disabled
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const cachedReportQuery = await db.collection('reportHistory')
+        .where('companyName', '==', sanitizedCompanyName)
+        .where('timestamp', '>=', threeDaysAgo.toISOString())
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get();
+      
+      if (!cachedReportQuery.empty) {
+        const cachedReport = cachedReportQuery.docs[0].data();
+        logger.info(`Returning cached report for ${sanitizedCompanyName} from ${cachedReport.timestamp}`);
+        
+        // Update the access timestamp
+        await db.collection('reportHistory').add({
+          companyName: sanitizedCompanyName,
+          timestamp: new Date().toISOString(),
+          reportId: cachedReportQuery.docs[0].id,
+          type: 'cache_access',
+          userId
+        });
+        
+        res.json({ 
+          data: cachedReport.report,
+          cached: true,
+          cachedAt: cachedReport.timestamp
+        });
+        return;
+      }
+    }
+    
+    // Fetch financial data if not provided
+    if (!data.financialData || Object.keys(data.financialData).length === 0) {
+      try {
+        logger.info(`Fetching financial data for ${sanitizedCompanyName} / ${sanitizedTicker}`);
+        
+        const alphaVantageKey = ALPHA_VANTAGE_API_KEY.value();
+        if (!alphaVantageKey) {
+          throw new Error('Missing Alpha Vantage API key');
+        }
+        
+        const tickerToUse = sanitizedTicker || sanitizedCompanyName;
+        const alphaVantageUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${tickerToUse}&apikey=${alphaVantageKey}`;
+        
+        const financialResponse = await fetch(alphaVantageUrl);
+        const financialData = await financialResponse.json();
+        
+        if (financialData && !financialData.Note && !financialData['Error Message']) {
+          logger.info(`Successfully retrieved financial data for ${tickerToUse}`);
+          Object.assign(companyData, financialData);
+        } else {
+          logger.warn(`Failed to retrieve financial data from Alpha Vantage: ${JSON.stringify(financialData)}`);
+        }
+      } catch (error) {
+        logger.error('Error fetching financial data', error);
+        // Continue without financial data - don't fail the request
+      }
+    }
+    
+    // Fetch SEC filings if needed and ticker is available
+    let secFilingText = '';
+    if (sanitizedTicker && (data.includeSECFilings !== false)) {
+      try {
+        logger.info(`Fetching recent SEC filings for ${sanitizedTicker}`);
+        
+        const secApiKey = SEC_API_KEY.value();
+        if (!secApiKey) {
+          logger.warn('Missing SEC API key, skipping SEC filing analysis');
+        } else {
+          const secApiUrl = `https://api.sec-api.io/filings?ticker=${sanitizedTicker}&limit=5&type=10-K,10-Q&secApiKey=${secApiKey}`;
+          
+          const secResponse = await fetch(secApiUrl);
+          const secData = await secResponse.json();
+          
+          if (secData && secData.filings && secData.filings.length > 0) {
+            logger.info(`Found ${secData.filings.length} SEC filings for ${sanitizedTicker}`);
+            
+            // Get the most recent 10-K or 10-Q filing
+            const mostRecentFiling = secData.filings[0];
+            
+            if (mostRecentFiling.linkToFilingDetails) {
+              logger.info(`Fetching text from ${mostRecentFiling.formType} filing dated ${mostRecentFiling.filedAt}`);
+              
+              try {
+                const filingResponse = await fetch(mostRecentFiling.linkToFilingDetails);
+                const filingHtml = await filingResponse.text();
+                
+                // Extract text content from HTML (basic approach)
+                const textContent = filingHtml
+                  .replace(/<[^>]*>/g, ' ') // Remove HTML tags
+                  .replace(/\s+/g, ' ') // Normalize whitespace
+                  .trim();
+                
+                // Limit to a reasonable size to avoid token limits
+                secFilingText = textContent.substring(0, 10000);
+                
+                logger.info(`Successfully extracted ${secFilingText.length} characters from SEC filing`);
+              } catch (filingError) {
+                logger.error('Error fetching SEC filing content', filingError);
+              }
+            }
+          } else {
+            logger.warn(`No SEC filings found for ${sanitizedTicker}`);
+          }
+        }
+      } catch (error) {
+        logger.error('Error fetching SEC filings', error);
+        // Continue without SEC data - don't fail the request
+      }
+    }
+    
+    // Prepare the AI prompt with all collected data
+    const aimlKey = AIML_API_KEY.value();
+    if (!aimlKey) {
+      throw new Error('Missing AIML API key');
+    }
+    
+    // Create an enhanced prompt with available data
+    const promptSections = [];
+    promptSections.push(`Generate a comprehensive due diligence report for the company: ${sanitizedCompanyName}${sanitizedTicker ? ` (${sanitizedTicker})` : ''}.`);
+    
+    // Add requirements
+    promptSections.push(`The report must include the following sections:
+1. Executive Summary - Including key findings, risk rating, and recommendation
+2. Financial Analysis - Including key metrics, trends, strengths and weaknesses
+3. Market Analysis - Including competitors, SWOT analysis, and market position
+4. Risk Assessment - Including financial, operational, market, and regulatory risks
+5. Recent Developments - Including news, filings, and strategic developments
+6. Conclusion - Summarizing the overall investment thesis`);
+    
+    // Add company data context
+    if (Object.keys(companyData).length > 2) { // More than just Name and ticker
+      promptSections.push(`Company Data:\n${JSON.stringify(companyData, null, 2)}`);
+    }
+    
+    // Add SEC filing context if available
+    if (secFilingText) {
+      promptSections.push(`Recent SEC Filing Excerpt:\n${secFilingText.substring(0, 2000)}...`);
+    }
+    
+    // Add format instruction
+    promptSections.push(`Format your response using the following structure:
+
+# Executive Summary
+[Overview paragraph]
+
+## Key Findings
+- [Finding 1]
+- [Finding 2]
+- [Finding 3]
+
+## Risk Rating
+[Low/Medium/High]
+
+## Recommendation
+[Recommendation paragraph]
+
+# Financial Analysis
+[Overview paragraph]
+
+## Key Metrics
+- Revenue: [value]
+- EPS: [value]
+- Profit Margin: [value]
+
+[Continue with other sections...]`);
+    
+    // Put all sections together
+    const prompt = promptSections.join('\n\n');
+    logger.debug(`Generated prompt with ${prompt.length} characters`);
+    
+    // Get the AI response
+    logger.info(`Generating AI content for ${sanitizedCompanyName}`);
+    const aiText = await generateAIMLContent(prompt, aimlKey, {
+      model: data.model || 'gpt-4',
+      temperature: data.temperature || 0.7,
+      maxTokens: 4096,
+      retries: 2,
+      timeout: 120000 // 2 minutes
+    });
+    
+    // Parse the AI response into structured format
+    logger.info(`Parsing AI response for ${sanitizedCompanyName}`);
+    let report;
+    try {
+      report = parseAIResponse(aiText, sanitizedCompanyName, companyData);
+    } catch (parsingError) {
+      // Store the raw response for diagnostics
+      res.locals.partialData = { 
+        aiText, 
+        companyName: sanitizedCompanyName, 
+        companyData,
+        parsingError: parsingError instanceof Error ? parsingError.message : String(parsingError)
+      };
+      
+      throw new DueDiligenceError(
+        'Failed to parse AI response',
+        'parsing_error',
+        500,
+        parsingError instanceof Error ? parsingError : new Error(String(parsingError))
+      );
+    }
+    
+    // Store the generated report
+    const reportRef = await db.collection('reportHistory').add({
+      companyName: sanitizedCompanyName,
+      ticker: sanitizedTicker,
+      timestamp: new Date().toISOString(),
+      report,
+      rawResponse: aiText.substring(0, 10000), // Store first 10k chars for debugging
+      userId,
+      type: 'generation',
+      prompt: data.includePromptInResponse ? prompt : undefined
+    });
+    
+    // Prepare the response
+    const responseData = {
+      data: report,
+      reportId: reportRef.id,
+      cached: false
+    };
+    
+    // Include the prompt in the response if requested
+    if (data.includePromptInResponse) {
+      responseData.prompt = prompt;
+    }
+    
+    res.json(responseData);
+  } catch (error) {
+    // Categorize and handle different error types
+    let responseError: DueDiligenceError;
+    
+    if (error instanceof DueDiligenceError) {
+      responseError = error;
+    } else if (error instanceof Error && error.message.includes('authentication')) {
+      responseError = new DueDiligenceError(
+        'Authentication failed', 
+        'auth_error', 
+        401, 
+        error
+      );
+    } else if (error instanceof Error && error.message.includes('Rate limit')) {
+      responseError = new DueDiligenceError(
+        'Rate limit exceeded', 
+        'rate_limit', 
+        429, 
+        error
+      );
+    } else if (error instanceof Error && (
+        error.message.includes('API key') || 
+        error.message.includes('fetch') || 
+        error.message.includes('timed out')
+    )) {
+      responseError = new DueDiligenceError(
+        'External API error', 
+        'api_error', 
+        502, 
+        error
+      );
+    } else if (error instanceof Error && error.message.includes('parsing')) {
+      responseError = new DueDiligenceError(
+        'Error processing AI response', 
+        'parsing_error', 
+        500, 
+        error
+      );
+    } else {
+      // Generic internal error
+      responseError = new DueDiligenceError(
+        'Internal server error', 
+        'internal_error', 
+        500, 
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+    
+    // Log the error with context
+    logger.error(`[${responseError.code}] Error generating due diligence report:`, responseError);
+    
+    // Send telemetry (in a production environment, this would connect to a monitoring service)
+    try {
+      await db.collection('errorTelemetry').add({
+        timestamp: new Date().toISOString(),
+        errorCode: responseError.code,
+        errorMessage: responseError.message,
+        stackTrace: responseError.cause?.stack,
+        endpoint: 'generateDueDiligence',
+        companyRequested: req.body?.companyName,
+        userId: req.headers.authorization || req.ip || 'anonymous'
+      });
+    } catch (telemetryError) {
+      logger.error('Failed to record error telemetry', telemetryError);
+      // Don't fail if telemetry fails
+    }
+    
+    // Return appropriate error response
+    res.status(responseError.statusCode).json({
+      error: responseError.message,
+      code: responseError.code,
+      details: responseError.cause instanceof Error ? responseError.cause.message : String(responseError.cause)
+    });
+  } finally {
+    // Cleanup resources and ensure rate limiting is properly handled
+    try {
+      // If a partial report was generated, store it for diagnostics
+      const partialData = res.locals.partialData;
+      if (partialData) {
+        await db.collection('partialReports').add({
+          timestamp: new Date().toISOString(),
+          companyName: req.body?.companyName,
+          partialData,
+          userId: req.headers.authorization || req.ip || 'anonymous'
+        });
+        logger.info('Saved partial report data for diagnostics');
+      }
+      
+      // Release any held resources
+      if (res.locals.cleanup && typeof res.locals.cleanup === 'function') {
+        res.locals.cleanup();
+      }
+    } catch (cleanupError) {
+      logger.error('Error during cleanup', cleanupError);
+      // Don't rethrow cleanup errors
+    }
+  }
+}
+
+// Exported Firebase Function
+export const generateDueDiligence = onRequest(
+  {
     memory: "1GiB",
     timeoutSeconds: 300,
     minInstances: 0,
     maxInstances: 10,
     invoker: "public",
-    secrets: [GEMINI_API_KEY, ALPHA_VANTAGE_API_KEY, NEWS_API_KEY, SEC_API_KEY]
-}, async (request, response) => {
-    return corsHandler(request, response, async () => {
-        try {
-            const data = request.body;
-            if (!data.companyName) {
-                response.status(400).json({ error: "Company name is required" });
-                return;
-            }
+    secrets: [AIML_API_KEY, ALPHA_VANTAGE_API_KEY, NEWS_API_KEY, SEC_API_KEY]
+  },
+  (req, res) => corsHandler(req, res, () => handleDueDiligenceRequest(req, res))
+);
 
-            // Get API keys from secrets
-            const geminiKey = GEMINI_API_KEY.value();
-            const alphaVantageKey = ALPHA_VANTAGE_API_KEY.value();
-            const newsKey = NEWS_API_KEY.value();
-            const secKey = SEC_API_KEY.value();
-
-            if (!geminiKey || !alphaVantageKey || !newsKey || !secKey) {
-                throw new Error('Missing required API keys');
-            }
-
-            const ai = initializeGenAI(geminiKey);
-            console.log('Initialized Gemini AI for company:', data.companyName);
-
-            // Fetch data from all available sources
-            const [companyData, newsData, secFilings] = await Promise.all([
-                getCompanyDataRaw(data.companyName, alphaVantageKey),
-                getNewsData(data.companyName, newsKey),
-                getSECFilings(data.companyName, secKey)
-            ]);
-
-            console.log('Fetched all data sources successfully');
-
-            // Prepare options from request or use defaults
-            const reportFormat = (data.options || {
-                format: {
-                    type: 'detailed',
-                    includeCharts: true,
-                }
-            }).format;
-
-            console.log('Using report format:', reportFormat.type);
-
-            // Enhanced prompt with more structure and formatting instructions
-            const prompt = `Generate a comprehensive professional due diligence report for ${data.companyName} in a structured format. 
-            Use the following data sources to inform your analysis:
-
-            Financial Data:
-            ${JSON.stringify(companyData)}
-
-            Recent News:
-            ${JSON.stringify(newsData)}
-
-            SEC Filings:
-            ${JSON.stringify(secFilings)}
-
-            Please structure the report with the following numbered sections:
-
-            1. Executive Summary
-            - Brief company overview (2-3 paragraphs)
-            - Key findings (5-7 bullet points)
-            - Risk rating (Low/Medium/High) with justification
-            - Recommendation summary (1-2 paragraphs)
-
-            2. Financial Analysis
-            - Key financial metrics (list the most important with values)
-            - Revenue and profitability trends (3-5 bullet points)
-            - Balance sheet strength assessment
-            - Cash flow analysis summary
-            - Financial strengths (3-5 bullet points)
-            - Financial weaknesses (3-5 bullet points)
-
-            3. Market Position & Competitive Analysis
-            - Industry overview and market size
-            - Competitive landscape (list main competitors)
-            - Market share and positioning assessment
-            - SWOT analysis with clear sections for:
-              * Strengths (4-6 bullet points)
-              * Weaknesses (4-6 bullet points)
-              * Opportunities (4-6 bullet points)
-              * Threats (4-6 bullet points)
-
-            4. Risk Assessment
-            - Financial risks (3-5 bullet points)
-            - Operational risks (3-5 bullet points)
-            - Market risks (3-5 bullet points)
-            - Regulatory risks (3-5 bullet points)
-            - ESG considerations (3-5 bullet points)
-
-            5. Recent Developments
-            - Summarize key news and events (2-3 paragraphs)
-            - Management changes (if applicable)
-            - Strategic initiatives (3-5 bullet points)
-            - Market sentiment analysis
-
-            Format Requirements:
-            - Use precise, data-driven language
-            - Include specific metrics and figures where available
-            - Use clear section headings and subheadings
-            - Present information in concise bullet points where appropriate
-            - Provide balanced analysis with both positive and negative insights
-            - Use professional financial terminology
-
-            The report should be suitable for professional investors and investment advisors to make informed decisions.`;
-
-            console.log('Generating report with Gemini AI...');
-            const model = ai.getGenerativeModel({ model: MODEL_NAME });
-            const result = await model.generateContent(prompt);
-            const text = result.response.text();
-            console.log('Report generated successfully');
-
-            // Parse the AI's text response into a structured format
-            const structuredReport = parseAIResponse(text);
-
-            // Add company name and timestamp
-            structuredReport.companyName = data.companyName;
-            structuredReport.timestamp = new Date().toISOString();
-
-            // Save report to database for history/audit
-            try {
-                const db = getFirestore();
-                const reportData = {
-                    companyName: data.companyName,
-                    timestamp: new Date().toISOString(),
-                    report: structuredReport,
-                    userId: request.headers.authorization ? 'authenticated' : 'anonymous',
-                    rawResponse: text.substring(0, 1000) // Store beginning for debugging
-                };
-                await db.collection('reportHistory').add(reportData);
-            }
-            catch (dbError) {
-                console.error("Error saving report to database:", dbError);
-                // Don't fail the request if DB save fails
-            }
-
-            response.json({ data: structuredReport });
-        }
-        catch (error) {
-            console.error("Error in generateDueDiligence:", error);
-            response.status(500).json({
-                error: "Internal server error",
-                details: error instanceof Error ? error.message : String(error)
-            });
-        }
-    });
-});
-
-// Update the generateText function
-export const generateText = onRequest({
-    memory: "1GiB",
-    timeoutSeconds: 300,
-    minInstances: 0,
-    maxInstances: 10,
-    invoker: "public",
-    secrets: [GEMINI_API_KEY]
-}, async (request, response) => {
-    return corsHandler(request, response, async () => {
-        try {
-            const data = request.body;
-            if (!data.prompt) {
-                response.status(400).json({ error: "Prompt is required" });
-                return;
-            }
-
-            const geminiKey = GEMINI_API_KEY.value();
-            if (!geminiKey) {
-                throw new Error('Missing Gemini API key');
-            }
-
-            const ai = initializeGenAI(geminiKey);
-
-            // Enhanced model configuration
-            const modelConfig = {
-                model: MODEL_NAME,
-                generationConfig: {
-                    temperature: 0.7,
-                    topK: 40,
-                    topP: 0.95,
-                    maxOutputTokens: 2048,
-                }
-            };
-
-            console.log('Generating text with model:', MODEL_NAME);
-            const model = ai.getGenerativeModel(modelConfig);
-
-            // Add retry logic for API calls
-            const result = await retryWithBackoff(async () => {
-                return await model.generateContent(data.prompt);
-            });
-
-            const text = result.response.text();
-            console.log('Generated text successfully');
-
-            // Add response validation
-            if (!text || text.trim().length === 0) {
-                throw new Error('Empty response from model');
-            }
-
-            response.json({
-                data: text,
-                model: MODEL_NAME,
-                timestamp: new Date().toISOString()
-            });
-        }
-        catch (error) {
-            console.error("Error in generateText:", error);
-            response.status(500).json({
-                error: "Internal server error",
-                details: error instanceof Error ? error.message : String(error),
-                timestamp: new Date().toISOString()
-            });
-        }
-    });
-});
+// Export other APIs
+export { apiProxy } from './apiProxy';

@@ -44,6 +44,7 @@ export interface CompanyData {
   ceo?: string;
   headquarters?: string;
   website?: string;
+  region?: string;
 }
 
 export interface NewsItem {
@@ -55,6 +56,7 @@ export interface NewsItem {
   source: {
     name: string;
   };
+  summary?: string;
 }
 
 export interface SECFiling {
@@ -144,13 +146,7 @@ interface RiskAssessmentType {
 }
 
 interface RecentDevelopmentsType {
-  news: Array<{
-    title: string;
-    date: string;
-    summary?: string;
-    description?: string;
-    url?: string;
-  }>;
+news: NewsItem[];
   events?: string[];
   filings?: Array<{
     title?: string;
@@ -165,6 +161,7 @@ interface RecentDevelopmentsType {
     summary?: string;
     description?: string;
   }>;
+  management?: string[];
 }
 
 /**

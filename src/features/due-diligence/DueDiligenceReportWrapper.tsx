@@ -1,30 +1,25 @@
-import React, { useState } from 'react';
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import React, { useState, useEffect } from 'react';
 import { DueDiligenceReport } from './DueDiligenceReport';
-import { DueDiligenceReport as DueDiligenceReportType } from './types';
 import { generateMockDueDiligenceReport } from './mockApi';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Loader2, Download, RefreshCcw } from 'lucide-react';
+import { Loader2, RefreshCcw } from 'lucide-react';
 
+// Define the props interface for TypeScript
 interface DueDiligenceReportWrapperProps {
   companyName?: string;
-  onReportGenerated?: (report: DueDiligenceReportType) => void;
+  onReportGenerated?: (report: any) => void;
   onError?: (error: string) => void;
   className?: string;
   showControls?: boolean;
 }
 
-const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
-  companyName,
-  onReportGenerated,
-  onError,
-  className,
-  showControls = true,
-}) => {
+const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({ companyName, onReportGenerated, onError, className, showControls = true }) => {
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<DueDiligenceReportType | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<any | null>(null);
+  const [errorMessage, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Function to generate a report using the mock API or real API
@@ -40,14 +35,11 @@ const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
       });
       return;
     }
-
     setLoading(true);
     setError(null);
-    
     try {
       // Check if we're in development mode
       const isDev = process.env.NODE_ENV === 'development';
-      
       if (isDev) {
         // Use mock API in development
         console.log("Using mock API for development");
@@ -67,14 +59,12 @@ const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
           },
           body: JSON.stringify({ companyName: company }),
         });
-
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || 'Network response was not ok');
         }
-
         const result = await response.json();
-        const reportData = result.data as DueDiligenceReportType;
+        const reportData = result.data;
         setReport(reportData);
         onReportGenerated?.(reportData);
         toast({
@@ -104,7 +94,7 @@ const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
   };
 
   // If companyName is provided, automatically generate a report for that company
-  React.useEffect(() => {
+  useEffect(() => {
     if (companyName && !report && !loading) {
       generateReport(companyName);
     }
@@ -112,30 +102,15 @@ const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
 
   return (
     <div className={className}>
-      {/* We pass the props to the DueDiligenceReport component */}
-      <DueDiligenceReport 
-        preloadedReport={report}
-        isLoading={loading}
-        error={error}
-        onGenerateReport={generateReport}
-        className={className}
-      />
-      
-      {/* Additional controls if needed */}
+      <DueDiligenceReport preloadedReport={report} isLoading={loading} error={errorMessage} onGenerateReport={generateReport} className={className} />
       {showControls && report && (
         <div className="mt-4 flex justify-end space-x-2">
-          <Button 
-            variant="outline" 
-            onClick={resetReport}
-            disabled={loading}
-          >
+          <Button variant="outline" onClick={resetReport} disabled={loading}>
             <RefreshCcw className="w-4 h-4 mr-2" />
             New Report
           </Button>
         </div>
       )}
-      
-      {/* Loading indicator */}
       {loading && (
         <Card className="mt-4">
           <CardContent className="pt-6">
@@ -146,16 +121,14 @@ const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
           </CardContent>
         </Card>
       )}
-      
-      {/* Error display */}
-      {error && !loading && (
+      {errorMessage && !loading && (
         <Card className="mt-4 border-destructive">
           <CardHeader>
             <CardTitle className="text-destructive">Error</CardTitle>
             <CardDescription>There was a problem generating the report</CardDescription>
           </CardHeader>
           <CardContent>
-            <p>{error}</p>
+            <p>{errorMessage}</p>
           </CardContent>
           <CardFooter>
             <Button variant="outline" onClick={() => setError(null)}>Dismiss</Button>
@@ -166,4 +139,4 @@ const DueDiligenceReportWrapper: React.FC<DueDiligenceReportWrapperProps> = ({
   );
 };
 
-export default DueDiligenceReportWrapper; 
+export default DueDiligenceReportWrapper;

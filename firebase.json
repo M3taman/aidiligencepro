@@ -1,30 +1,10 @@
 {
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs18",
-    "codebase": "default",
-    "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log"
-    ],
-    "predeploy": [
-      "npm --prefix \"$RESOURCE_DIR\" run build"
-    ],
-    "environment": {
-      "GEMINI_API_KEY": "${GEMINI_APIKEY}",
-      "ALPHA_VANTAGE_API_KEY": "${ALPHAVANTAGE_KEY}",
-      "NEWS_API_KEY": "${NEWS_API_KEY}",
-      "SEC_API_KEY": "${SEC_API_KEY}"
-    }
+    "runtime": "nodejs18"
   },
   "hosting": {
-    "public": "dist",
+    "public": "public",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -32,89 +12,23 @@
     ],
     "rewrites": [
       {
+        "source": "/api/generateDueDiligence",
+        "function": "generateDueDiligence"
+      },
+      {
+        "source": "/api/proxy",
+        "function": "apiProxy"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
-    ],
-    "headers": [
-      {
-        "source": "**/*.@(js|css)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "max-age=31536000"
-          }
-        ]
-      },
-      {
-        "source": "**/*.@(jpg|jpeg|gif|png|svg|webp)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "max-age=31536000"
-          }
-        ]
-      },
-      {
-        "source": "/service-worker.js",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          }
-        ]
-      },
-      {
-        "source": "**",
-        "headers": [
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          },
-          {
-            "key": "X-Frame-Options",
-            "value": "DENY"
-          },
-          {
-            "key": "X-XSS-Protection",
-            "value": "1; mode=block"
-          },
-          {
-            "key": "Referrer-Policy",
-            "value": "strict-origin-when-cross-origin"
-          },
-          {
-            "key": "Content-Security-Policy",
-            "value": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; frame-src *"
-          }
-        ]
-      }
-    ],
-    "cleanUrls": true,
-    "trailingSlash": false
-  },
-  "extensions": {},
-  "storage": {
-    "rules": "storage.rules"
+    ]
   },
   "emulators": {
-    "auth": {
-      "port": 9099
-    },
     "functions": {
-      "port": 5001
-    },
-    "firestore": {
-      "port": 8080
-    },
-    "hosting": {
-      "port": 5000
-    },
-    "storage": {
-      "port": 9199
-    },
-    "ui": {
-      "enabled": true
+      "host": "localhost",
+      "port": 5002
     }
   }
 }

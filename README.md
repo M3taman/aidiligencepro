@@ -1,5 +1,80 @@
 # AI Diligence Pro
 
+An AI-powered due diligence tool for investment professionals.
+
+## Setup Instructions
+
+### 1. API Keys Setup
+
+The application requires several API keys to function properly:
+
+#### Required API Keys:
+- OpenAI API Key (for GPT-4 integration)
+- Alpha Vantage API Key (for financial data)
+- Firebase configuration (for authentication and database)
+
+#### Optional API Keys:
+- SEC API Key (for SEC filing data)
+- News API Key (for news integration)
+
+### 2. Environment Variables
+
+1. Copy the `.env.example` file to `.env`:
+   ```
+   cp .env.example .env
+   ```
+
+2. Edit the `.env` file and add your actual API keys:
+   ```
+   OPENAI_API_KEY=sk-your_openai_api_key_here
+   ALPHA_VANTAGE_API_KEY=your_alphavantage_api_key_here
+   ...
+   ```
+
+### 3. Firebase Setup
+
+1. Configure Firebase Functions:
+   ```
+   firebase functions:config:set aiml.key="your-openai-api-key" alphavantage.key="your-alphavantage-key"
+   ```
+
+2. Deploy Firebase Functions:
+   ```
+   firebase deploy --only functions
+   ```
+
+### 4. Running the Application
+
+#### Development Mode:
+```
+npm run dev
+```
+
+#### Production Build:
+```
+npm run build
+npm start
+```
+
+## Features
+
+- Automated due diligence report generation
+- SEC filing analysis
+- Financial data analysis
+- Market analysis
+- Risk assessment
+- Smart alerts
+
+## Architecture
+
+The application is built with:
+- React/TypeScript (frontend)
+- Firebase (authentication, database, functions)
+- OpenAI GPT-4 (AI analysis)
+- Alpha Vantage (financial data)
+
+# AI Diligence Pro
+
 AI-powered due diligence and report generation platform with Firebase Storage integration.
 
 ## Firebase Storage Integration
