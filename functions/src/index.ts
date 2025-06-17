@@ -233,30 +233,38 @@ function parseAIResponse(text: string, companyName: string, companyData: Company
   logger.debug('Parsing AI response for company: ' + companyName);
   
   try {
-    // First attempt to parse the response as JSON
+    // Attempt to parse the entire text as JSON first
     try {
-      // Check if the entire response is JSON
-      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || 
-                        text.match(/\{[\s\S]*\}/);
-      
-      if (jsonMatch) {
-        const jsonContent = jsonMatch[1] || jsonMatch[0];
-        try {
-          const parsedResponse = JSON.parse(jsonContent);
-          logger.info('Successfully parsed AI response as JSON');
-          
-          // Validate and enhance the parsed response
-          return validateAndEnhanceResponse(parsedResponse, companyName, companyData);
-        } catch (jsonError) {
-          logger.warn('JSON parsing failed, falling back to section parsing', jsonError);
-        }
+      const parsedJson = JSON.parse(text);
+      // Basic validation to check if it's a potentially valid DueDiligenceResponse
+      if (parsedJson.companyName && parsedJson.executiveSummary) {
+        logger.info('Successfully parsed the entire AI response as JSON.');
+        return validateAndEnhanceResponse(parsedJson, companyName, companyData);
+      } else {
+        logger.warn('Parsed JSON lacks required fields, falling back to section parsing.');
       }
-    } catch (error) {
-      logger.warn('Initial JSON parsing attempt failed', error);
+    } catch (e) {
+      logger.warn('Failed to parse entire response as JSON, attempting to extract from markdown or use section parsing.', e);
+      // Fallback to checking for JSON within markdown or resorting to section parsing
+      try {
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ||
+                          text.match(/(\{[\s\S]*\})/); // More general JSON object match
+
+        if (jsonMatch) {
+          const jsonContent = jsonMatch[1] || jsonMatch[0]; // Use group 1 if available, else the whole match
+          const parsedResponse = JSON.parse(jsonContent);
+          logger.info('Successfully parsed AI response as JSON from markdown block.');
+          return validateAndEnhanceResponse(parsedResponse, companyName, companyData);
+        } else {
+          logger.info('No JSON markdown block found, proceeding with section-based parsing.');
+        }
+      } catch (jsonError) {
+        logger.warn('JSON parsing from markdown block failed, falling back to section parsing.', jsonError);
+      }
     }
     
-    // If JSON parsing fails, attempt section-by-section parsing
-    logger.debug('Parsing AI response by sections');
+    // If JSON parsing fails or is not applicable, attempt section-by-section parsing
+    logger.info('Using fallback regex-based parsing for AI response.');
     
     // Initialize structured response
     const response: DueDiligenceResponse = {
@@ -1328,6 +1336,72 @@ async function generateAIMLContent(
   throw lastError || new Error('Failed to generate content after multiple attempts');
 }
 
+// Helper function to fetch Alpha Vantage data
+async function fetchAlphaVantageData(ticker: string, apiKey: string): Promise<CompanyData | null> {
+  logger.info(`Fetching financial data for ${ticker}`);
+  if (!apiKey) {
+    logger.warn('Missing Alpha Vantage API key. Skipping financial data fetch.');
+    return null; // Or throw new Error('Missing Alpha Vantage API key');
+  }
+  const alphaVantageUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${ticker}&apikey=${apiKey}`;
+  const response = await fetch(alphaVantageUrl);
+  const data = await response.json() as any;
+
+  if (data && !data.Note && !data['Error Message']) {
+    logger.info(`Successfully retrieved financial data for ${ticker}`);
+    return data as CompanyData;
+  } else {
+    logger.warn(`Failed to retrieve financial data from Alpha Vantage for ${ticker}: ${JSON.stringify(data)}`);
+    // Optionally throw an error to be caught by Promise.allSettled if this data is critical
+    // throw new Error(`Alpha Vantage API error for ${ticker}: ${JSON.stringify(data.Note || data['Error Message'] || 'Unknown error')}`);
+    return null; // Continue if data is not strictly critical
+  }
+}
+
+// Helper function to fetch SEC filings data
+async function fetchSecFilingsData(ticker: string | undefined, apiKey: string): Promise<string | null> {
+  if (!ticker) {
+    logger.info('No ticker provided, skipping SEC filing analysis.');
+    return null;
+  }
+  if (!apiKey) {
+    logger.warn('Missing SEC API key, skipping SEC filing analysis.');
+    return null; // Or throw new Error('Missing SEC API key');
+  }
+
+  logger.info(`Fetching recent SEC filings for ${ticker}`);
+  const secApiUrl = `https://api.sec-api.io/filings?ticker=${ticker}&limit=5&type=10-K,10-Q&secApiKey=${apiKey}`;
+  const secResponse = await fetch(secApiUrl);
+  const secData = await secResponse.json() as any;
+
+  if (secData && secData.filings && secData.filings.length > 0) {
+    logger.info(`Found ${secData.filings.length} SEC filings for ${ticker}`);
+    const mostRecentFiling = secData.filings[0];
+    if (mostRecentFiling.linkToFilingDetails) {
+      logger.info(`Fetching text from ${mostRecentFiling.formType} filing dated ${mostRecentFiling.filedAt} for ${ticker}`);
+      try {
+        const filingResponse = await fetch(mostRecentFiling.linkToFilingDetails);
+        const filingHtml = await filingResponse.text();
+        const textContent = filingHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        logger.info(`Successfully extracted ${textContent.length} characters from SEC filing for ${ticker}`);
+        return textContent.substring(0, 10000); // Limit size
+      } catch (filingError) {
+        logger.error(`Error fetching SEC filing content for ${ticker}:`, filingError);
+        // Optionally throw an error
+        // throw new Error(`Failed to fetch SEC filing content for ${ticker}: ${filingError}`);
+        return null; // Continue if data is not strictly critical
+      }
+    } else {
+      logger.warn(`No linkToFilingDetails for the most recent filing for ${ticker}.`);
+      return null;
+    }
+  } else {
+    logger.warn(`No SEC filings found for ${ticker}. Response: ${JSON.stringify(secData)}`);
+    return null;
+  }
+}
+
+
 // Main function handler
 async function handleDueDiligenceRequest(req: any, res: any) {
   // Initialize local storage for cleanup and partial data
@@ -1338,6 +1412,29 @@ async function handleDueDiligenceRequest(req: any, res: any) {
   };
   
   try {
+    // API Key Availability Checks
+    if (!AIML_API_KEY.value()) {
+      throw new DueDiligenceError(
+        "Configuration error: Missing AIML_API_KEY. Report generation cannot proceed.",
+        'internal_error',
+        500
+      );
+    }
+    if (!ALPHA_VANTAGE_API_KEY.value()) {
+      throw new DueDiligenceError(
+        "Configuration error: Missing ALPHA_VANTAGE_API_KEY. Report generation cannot proceed.",
+        'internal_error',
+        500
+      );
+    }
+    if (!SEC_API_KEY.value()) {
+      throw new DueDiligenceError(
+        "Configuration error: Missing SEC_API_KEY. Report generation cannot proceed.",
+        'internal_error',
+        500
+      );
+    }
+
     // Validate authentication
     try {
       await validateAuth(req, res);
@@ -1455,84 +1552,39 @@ async function handleDueDiligenceRequest(req: any, res: any) {
       }
     }
     
-    // Fetch financial data if not provided
+    // Fetch financial data and SEC filings concurrently
+    let secFilingText: string | null = '';
+    const alphaVantageKey = ALPHA_VANTAGE_API_KEY.value();
+    const secApiKey = SEC_API_KEY.value();
+
+    // Only fetch if data is not already provided or if SEC filings are requested
+    const fetchDataPromises = [];
     if (!data.financialData || Object.keys(data.financialData).length === 0) {
-      try {
-        logger.info(`Fetching financial data for ${sanitizedCompanyName} / ${sanitizedTicker}`);
-        
-        const alphaVantageKey = ALPHA_VANTAGE_API_KEY.value();
-        if (!alphaVantageKey) {
-          throw new Error('Missing Alpha Vantage API key');
-        }
-        
-        const tickerToUse = sanitizedTicker || sanitizedCompanyName;
-        const alphaVantageUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${tickerToUse}&apikey=${alphaVantageKey}`;
-        
-        const financialResponse = await fetch(alphaVantageUrl);
-        const financialData = await financialResponse.json();
-        
-        if (financialData && !financialData.Note && !financialData['Error Message']) {
-          logger.info(`Successfully retrieved financial data for ${tickerToUse}`);
-          Object.assign(companyData, financialData);
-        } else {
-          logger.warn(`Failed to retrieve financial data from Alpha Vantage: ${JSON.stringify(financialData)}`);
-        }
-      } catch (error) {
-        logger.error('Error fetching financial data', error);
-        // Continue without financial data - don't fail the request
-      }
+      fetchDataPromises.push(fetchAlphaVantageData(sanitizedTicker || sanitizedCompanyName, alphaVantageKey));
+    } else {
+      fetchDataPromises.push(Promise.resolve(null)); // Resolve immediately if data is present
     }
-    
-    // Fetch SEC filings if needed and ticker is available
-    let secFilingText = '';
+
     if (sanitizedTicker && (data.includeSECFilings !== false)) {
-      try {
-        logger.info(`Fetching recent SEC filings for ${sanitizedTicker}`);
-        
-        const secApiKey = SEC_API_KEY.value();
-        if (!secApiKey) {
-          logger.warn('Missing SEC API key, skipping SEC filing analysis');
-        } else {
-          const secApiUrl = `https://api.sec-api.io/filings?ticker=${sanitizedTicker}&limit=5&type=10-K,10-Q&secApiKey=${secApiKey}`;
-          
-          const secResponse = await fetch(secApiUrl);
-          const secData = await secResponse.json();
-          
-          if (secData && secData.filings && secData.filings.length > 0) {
-            logger.info(`Found ${secData.filings.length} SEC filings for ${sanitizedTicker}`);
-            
-            // Get the most recent 10-K or 10-Q filing
-            const mostRecentFiling = secData.filings[0];
-            
-            if (mostRecentFiling.linkToFilingDetails) {
-              logger.info(`Fetching text from ${mostRecentFiling.formType} filing dated ${mostRecentFiling.filedAt}`);
-              
-              try {
-                const filingResponse = await fetch(mostRecentFiling.linkToFilingDetails);
-                const filingHtml = await filingResponse.text();
-                
-                // Extract text content from HTML (basic approach)
-                const textContent = filingHtml
-                  .replace(/<[^>]*>/g, ' ') // Remove HTML tags
-                  .replace(/\s+/g, ' ') // Normalize whitespace
-                  .trim();
-                
-                // Limit to a reasonable size to avoid token limits
-                secFilingText = textContent.substring(0, 10000);
-                
-                logger.info(`Successfully extracted ${secFilingText.length} characters from SEC filing`);
-              } catch (filingError) {
-                logger.error('Error fetching SEC filing content', filingError);
-              }
-            }
-          } else {
-            logger.warn(`No SEC filings found for ${sanitizedTicker}`);
-          }
-        }
-      } catch (error) {
-        logger.error('Error fetching SEC filings', error);
-        // Continue without SEC data - don't fail the request
-      }
+      fetchDataPromises.push(fetchSecFilingsData(sanitizedTicker, secApiKey));
+    } else {
+      fetchDataPromises.push(Promise.resolve(null)); // Resolve immediately if not needed
+    }
+
+    const [alphaVantageResult, secApiResult] = await Promise.allSettled(fetchDataPromises);
+
+    if (alphaVantageResult.status === 'fulfilled' && alphaVantageResult.value) {
+      Object.assign(companyData, alphaVantageResult.value);
+      logger.info(`Successfully retrieved and assigned financial data for ${sanitizedCompanyName}`);
+    } else if (alphaVantageResult.status === 'rejected') {
+      logger.warn(`Failed to retrieve financial data for ${sanitizedCompanyName}:`, alphaVantageResult.reason);
+    }
+
+    if (secApiResult.status === 'fulfilled' && secApiResult.value) {
+      secFilingText = secApiResult.value;
+      logger.info(`Successfully retrieved and assigned SEC filing text for ${sanitizedTicker}`);
+    } else if (secApiResult.status === 'rejected') {
+      logger.warn(`Failed to retrieve SEC filings for ${sanitizedTicker || 'N/A'}:`, secApiResult.reason);
     }
     
     // Prepare the AI prompt with all collected data
@@ -1565,31 +1617,180 @@ async function handleDueDiligenceRequest(req: any, res: any) {
     }
     
     // Add format instruction
-    promptSections.push(`Format your response using the following structure:
+    promptSections.push(`Please format your entire response as a single JSON object. The JSON object should strictly follow this TypeScript interface:
+interface DueDiligenceResponse {
+  companyName: string;
+  ticker?: string;
+  timestamp: string;
+  companyData: CompanyData;
+  executiveSummary: ExecutiveSummaryType | string;
+  keyFindings?: string[];
+  financialAnalysis: FinancialAnalysisType | string;
+  marketAnalysis: MarketAnalysisType | string;
+  riskAssessment: RiskAssessmentType | string;
+  recentDevelopments?: RecentDevelopmentsType;
+  conclusion?: string;
+  generatedAt?: string;
+  metadata?: {
+    analysisDepth: 'basic' | 'standard' | 'comprehensive';
+    focusAreas: string[];
+    dataSources: string[];
+  };
+}
 
-# Executive Summary
-[Overview paragraph]
+interface CompanyData {
+  Symbol?: string;
+  AssetType?: string;
+  Name?: string;
+  Description?: string;
+  Exchange?: string;
+  Currency?: string;
+  Country?: string;
+  Sector?: string;
+  Industry?: string;
+  MarketCapitalization?: number;
+  EBITDA?: number;
+  PERatio?: number;
+  PEGRatio?: number;
+  BookValue?: number;
+  DividendPerShare?: number;
+  DividendYield?: number;
+  EPS?: number;
+  ProfitMargin?: number;
+  QuarterlyEarningsGrowthYOY?: number;
+  QuarterlyRevenueGrowthYOY?: number;
+  AnalystTargetPrice?: number;
+  TrailingPE?: number;
+  ForwardPE?: number;
+  PriceToSalesRatioTTM?: number;
+  PriceToBookRatio?: number;
+  EVToRevenue?: number;
+  EVToEBITDA?: number;
+  Beta?: number;
+  '52WeekHigh'?: number;
+  '52WeekLow'?: number;
+  '50DayMovingAverage'?: number;
+  '200DayMovingAverage'?: number;
+  SharesOutstanding?: number;
+  DividendDate?: string;
+  ExDividendDate?: string;
+  ticker?: string;
+  exchange?: string;
+  industry?: string;
+  sector?: string;
+  marketCap?: number;
+  employees?: number;
+  founded?: number;
+  ceo?: string;
+  headquarters?: string;
+  website?: string;
+  region?: string;
+}
 
-## Key Findings
-- [Finding 1]
-- [Finding 2]
-- [Finding 3]
+interface NewsItem {
+  title: string;
+  description: string;
+  url: string;
+  publishedAt: string;
+  date: string;
+  source: {
+    name: string;
+  };
+  summary?: string;
+}
 
-## Risk Rating
-[Low/Medium/High]
+interface SECFiling {
+  type: string;
+  filingDate: string;
+  date: string;
+  description: string;
+  url: string;
+}
 
-## Recommendation
-[Recommendation paragraph]
+type StringOrStringArray = string | string[];
 
-# Financial Analysis
-[Overview paragraph]
+interface ExecutiveSummaryType {
+  overview: string;
+  keyFindings?: StringOrStringArray;
+  riskRating?: string;
+  recommendation?: string;
+}
 
-## Key Metrics
-- Revenue: [value]
-- EPS: [value]
-- Profit Margin: [value]
+interface FinancialAnalysisType {
+  overview: string;
+  metrics: Record<string, any>;
+  trends: string | string[];
+  ratios?: Record<string, number>;
+  strengths?: StringOrStringArray;
+  weaknesses?: StringOrStringArray;
+  revenueGrowth?: string;
+  profitabilityMetrics?: string;
+  balanceSheetAnalysis?: string;
+  cashFlowAnalysis?: string;
+}
 
-[Continue with other sections...]`);
+interface MarketAnalysisType {
+  overview: string;
+  competitors: string[] | Array<{
+    name: string;
+    strengths?: string;
+    weaknesses?: string;
+  }>;
+  swot?: {
+    strengths: string | string[];
+    weaknesses: string | string[];
+    opportunities: string | string[];
+    threats: string | string[];
+  };
+  marketPosition?: string;
+  position?: string;
+  industryOverview?: string;
+  competitiveLandscape?: string;
+  marketShare?: string;
+  competitiveAdvantages?: string;
+}
+
+interface RiskAssessmentType {
+  overview: string;
+  riskFactors: {
+    financial: string[];
+    operational: string[];
+    market: string[];
+    regulatory: string[];
+    esg?: string[];
+  };
+  riskRating: 'low' | 'medium' | 'high';
+  financial?: string;
+  operational?: string;
+  market?: string;
+  regulatory?: string;
+  esgConsiderations?: string;
+  financialRisks?: string;
+  operationalRisks?: string;
+  marketRisks?: string;
+  regulatoryRisks?: string;
+}
+
+interface RecentDevelopmentsType {
+  news: NewsItem[];
+  events?: string[];
+  filings?: Array<{
+    title?: string;
+    type?: string;
+    date: string;
+    description?: string;
+    url?: string;
+  }>;
+  strategic?: StringOrStringArray | Array<{
+    title: string;
+    date: string;
+    summary?: string;
+    description?: string;
+  }>;
+  management?: string[];
+}
+Ensure all string content is properly escaped within the JSON.
+`);
     
     // Put all sections together
     const prompt = promptSections.join('\n\n');
