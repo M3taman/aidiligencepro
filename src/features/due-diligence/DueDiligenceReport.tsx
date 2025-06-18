@@ -1,211 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, FileText, Lock, Search, Bot, AlertCircle, Settings2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, FileText, Search, AlertCircle, Settings2, ChevronDown, ChevronUp } from "lucide-react"; // Removed Lock, Bot
 import { useAuth } from '@/components/auth/authContext';
-import { analyzeSECFiling } from '@/features/ai-processor/SECAnalyzer';
-import { getAlphaVantageData, fetchSECFilings } from '@/lib/api';
+// Removed analyzeSECFiling, getAlphaVantageData, fetchSECFilings as they seem unused now
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+// Removed Tabs, TabsContent, TabsList, TabsTrigger, Accordion related imports as they don't appear to be used by the remaining code
 import { cn } from "@/lib/utils";
 import { toast } from 'sonner';
-import { useToast } from '@/components/ui/use-toast';
+// Removed useToast as sonner is used directly
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useReportUsage } from '@/hooks/useReportUsage';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+// Removed Select related imports as they don't appear to be used
 import { Checkbox } from '@/components/ui/checkbox';
 import TrialStatus from '@/components/TrialStatus';
 
 // Import components and utilities
-import { ReportOptions } from './components/ReportOptions';
-import { ReportDisplay } from './components/ReportDisplay';
+// Removed ReportOptions, ReportDisplay as they seem unused now
 import SimpleReportDisplay from './components/SimpleReportDisplay';
-import { formatReport } from './utils/reportFormatter';
+// Removed formatReport as it was likely for the old parser
 import { addAiDiligenceLogoToPDF, addWatermarkAndBacklink } from './utils/pdfUtils.ts';
-import { DueDiligenceReportType, ReportGenerationOptions } from "./types";
+import { DueDiligenceReportType, ReportGenerationOptions } from "./types"; // Assuming ReportGenerationOptions is still needed for PDF or other options
 import jsPDF from 'jspdf';
 
-// Helper functions for report generation
-const getCompetitorsByIndustry = (industry: string): string[] => {
-  // This would ideally be a more sophisticated lookup based on industry
-  const industryCompetitors: Record<string, string[]> = {
-    'Auto Manufacturers': ['Tesla', 'Ford', 'General Motors', 'Toyota', 'Volkswagen'],
-    'Software': ['Microsoft', 'Oracle', 'Salesforce', 'Adobe', 'SAP'],
-    'Consumer Electronics': ['Apple', 'Sony', 'Samsung', 'HP', 'Dell'],
-    'Semiconductors': ['NVIDIA', 'AMD', 'Intel', 'TSMC', 'Qualcomm'],
-    'Retail': ['Amazon', 'Walmart', 'Target', 'Costco', 'JD.com'],
-    'Aerospace & Defense': ['Boeing', 'Lockheed Martin', 'Raytheon', 'General Dynamics', 'Northrop Grumman'],
-    'Pharmaceutical': ['CVS Health', 'Walgreens', 'Rite Aid', 'Dr. Reddy\'s', 'Teva'],
-    'Banking': ['JPMorgan Chase', 'Bank of America', 'Wells Fargo', 'Citigroup', 'Goldman Sachs']
-  };
-  
-  return industryCompetitors[industry] || ['Competitor 1', 'Competitor 2', 'Competitor 3', 'Competitor 4', 'Competitor 5'];
-};
-
-// Function to convert OpenAI text response to structured report
-function convertTextToStructuredReport(text: string, companyName: string): DueDiligenceReportType {
-  // Initialize with default structure
-  const report: DueDiligenceReportType = {
-    companyName,
-    timestamp: new Date().toISOString(),
-    companyData: { Name: companyName },
-    executiveSummary: { overview: '' },
-    financialAnalysis: { overview: '', metrics: {}, trends: [] },
-    marketAnalysis: { overview: '', competitors: [] },
-    riskAssessment: { 
-      overview: '', 
-      riskFactors: {
-        financial: [],
-        operational: [],
-        market: [],
-        regulatory: []
-      },
-      riskRating: 'medium'
-    },
-  };
-  
-  try {
-    // Extract sections using regex
-    // Executive Summary
-    const execSummaryMatch = text.match(/Executive\s+Summary[:\s\n]*([\s\S]*?)(?=\s*Financial\s+Analysis|\s*#|\s*$)/i);
-    if (execSummaryMatch) {
-      const execSummaryText = execSummaryMatch[1].trim();
-      
-      // Look for subsections
-      const keyFindingsMatch = execSummaryText.match(/Key\s+Findings[:\s\n]*([\s\S]*?)(?=\s*Risk\s+Rating|\s*Recommendation|\s*#|\s*$)/i);
-      const riskRatingMatch = execSummaryText.match(/Risk\s+Rating[:\s\n]*([A-Za-z]+)/i);
-      const recommendationMatch = execSummaryText.match(/Recommendation[:\s\n]*([\s\S]*?)(?=\s*#|\s*$)/i);
-      
-      // Extract overview (everything before Key Findings if present)
-      const overviewMatch = execSummaryText.match(/^([\s\S]*?)(?=\s*Key\s+Findings|\s*$)/i);
-      
-      report.executiveSummary = {
-        overview: overviewMatch ? overviewMatch[1].trim() : execSummaryText
-      };
-      
-      if (keyFindingsMatch) {
-        // Extract bullet points
-        const bulletRegex = /[•\-\*]\s*([^\n]+)/g;
-        const findings: string[] = [];
-        let match;
-        while ((match = bulletRegex.exec(keyFindingsMatch[1])) !== null) {
-          findings.push(match[1].trim());
-        }
-        if (findings.length > 0) {
-          report.executiveSummary.keyFindings = findings;
-          report.keyFindings = findings;
-        } else {
-          report.executiveSummary.keyFindings = keyFindingsMatch[1].trim();
-        }
-      }
-      
-      if (riskRatingMatch) {
-        report.executiveSummary.riskRating = riskRatingMatch[1].trim();
-      }
-      
-      if (recommendationMatch) {
-        report.executiveSummary.recommendation = recommendationMatch[1].trim();
-      }
-    }
-    
-    // Financial Analysis
-    const financialMatch = text.match(/Financial\s+Analysis[:\s\n]*([\s\S]*?)(?=\s*Market\s+Analysis|\s*#|\s*$)/i);
-    if (financialMatch) {
-      const financialText = financialMatch[1].trim();
-      
-      // Extract overview (first paragraph)
-      const overviewMatch = financialText.match(/^([\s\S]*?)(?=\s*Key\s+Metrics|\s*Trends|\s*Strengths|\s*Weaknesses|\s*$)/i);
-      
-      report.financialAnalysis = {
-        overview: overviewMatch ? overviewMatch[1].trim() : financialText,
-        metrics: {},
-        trends: []
-      };
-      
-      // Extract metrics
-      const metricsMatch = financialText.match(/Key\s+Metrics[:\s\n]*([\s\S]*?)(?=\s*Trends|\s*Strengths|\s*Weaknesses|\s*#|\s*$)/i);
-      if (metricsMatch) {
-        const metricsText = metricsMatch[1].trim();
-        // Extract key-value pairs
-        const metricRegex = /[•\-\*]?\s*([^:]+):\s*([^\n]+)/g;
-        let match;
-        while ((match = metricRegex.exec(metricsText)) !== null) {
-          report.financialAnalysis.metrics[match[1].trim()] = match[2].trim();
-        }
-      }
-      
-      // Extract trends
-      const trendsMatch = financialText.match(/Trends[:\s\n]*([\s\S]*?)(?=\s*Strengths|\s*Weaknesses|\s*#|\s*$)/i);
-      if (trendsMatch) {
-        const trendsText = trendsMatch[1].trim();
-        // Extract bullet points
-        const bulletRegex = /[•\-\*]\s*([^\n]+)/g;
-        const trends: string[] = [];
-        let match;
-        while ((match = bulletRegex.exec(trendsText)) !== null) {
-          trends.push(match[1].trim());
-        }
-        report.financialAnalysis.trends = trends.length > 0 ? trends : trendsText;
-      }
-      
-      // Extract strengths
-      const strengthsMatch = financialText.match(/Strengths[:\s\n]*([\s\S]*?)(?=\s*Weaknesses|\s*#|\s*$)/i);
-      if (strengthsMatch) {
-        const strengthsText = strengthsMatch[1].trim();
-        // Extract bullet points
-        const bulletRegex = /[•\-\*]\s*([^\n]+)/g;
-        const strengths: string[] = [];
-        let match;
-        while ((match = bulletRegex.exec(strengthsText)) !== null) {
-          strengths.push(match[1].trim());
-        }
-        report.financialAnalysis.strengths = strengths.length > 0 ? strengths : strengthsText;
-      }
-      
-      // Extract weaknesses
-      const weaknessesMatch = financialText.match(/Weaknesses[:\s\n]*([\s\S]*?)(?=\s*#|\s*$)/i);
-      if (weaknessesMatch) {
-        const weaknessesText = weaknessesMatch[1].trim();
-        // Extract bullet points
-        const bulletRegex = /[•\-\*]\s*([^\n]+)/g;
-        const weaknesses: string[] = [];
-        let match;
-        while ((match = bulletRegex.exec(weaknessesText)) !== null) {
-          weaknesses.push(match[1].trim());
-        }
-        report.financialAnalysis.weaknesses = weaknesses.length > 0 ? weaknesses : weaknessesText;
-      }
-    }
-    
-    // Market Analysis
-    const marketMatch = text.match(/Market\s+Analysis[:\s\n]*([\s\S]*?)(?=\s*Risk\s+Assessment|\s*#|\s*$)/i);
-    if (marketMatch) {
-      const marketText = marketMatch[1].trim();
-      
-      // Extract overview (first paragraph)
-      const overviewMatch = marketText.match(/^([\s\S]*?)(?=\s*Competitors|\s*SWOT|\s*Market\s+Position|\s*$)/i);
-      
-      report.marketAnalysis = {
-        overview: overviewMatch ? overviewMatch[1].trim() : marketText,
-        competitors: []
-      };
-      
-      // Extract competitors
-      const competitorsMatch = marketText.match(/Competitors[:\s\n]*([\s\S]*?)(?=\s*SWOT|\s*Market\s+Position|\s*#|\s*$)/i);
-      if (competitorsMatch) {
-        const competitorsText = competitorsMatch[1].trim();
-        // Extract bullet points
-        const bulletRegex = /[•\-\*]\s*([^\n]+)/g;
-        const competitors: string[] = [];
-        let match;
-        while ((match = bulletRegex.exec(competitorsText)) !== null) {
-          competitors.push(match[1].trim());
-        }
-        report.marketAnalysis.competitors = competitors.length > 0 ? competitors : competitorsText.
+// Interface definition should be here
+interface DueDiligenceReportProps {
   className?: string;
   preloadedReport?: DueDiligenceReportType | null;
   isLoading?: boolean;
@@ -223,58 +45,54 @@ export function DueDiligenceReport({
   isLandingDemo = false
 }: DueDiligenceReportProps) {
   const { user } = useAuth();
-  const { trialStatus, loading: trialLoading, trackReportGeneration, canGenerateReport, generateReport } = useReportUsage();
+  const { trialStatus, loading: trialLoading, trackReportGeneration, canGenerateReport } = useReportUsage(); // Removed generateReport as it's not used in the new flow
   const navigate = useNavigate();
   const { settings } = useUserSettings();
-  const [company, setCompany] = useState(""); // Restore state
+  const [company, setCompany] = useState("");
   const [showOptions, setShowOptions] = useState(false);
-  const [options, setOptions] = useState<ReportGenerationOptions>({
-    format: {
-      includeCharts: true,
-      includeTables: true
-    }
-  });
+  // const [options, setOptions] = useState<ReportGenerationOptions>({ // Assuming options might still be used for PDF generation or other UI features
+  //   format: {
+  //     includeCharts: true,
+  //     includeTables: true
+  //   }
+  // });
   
-  // Restore internal state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DueDiligenceReportType | null>(null);
-  const [showCharts, setShowCharts] = useState(true); // Keep UI state
+  const [showCharts, setShowCharts] = useState(true);
   const [showTables, setShowTables] = useState(true);
 
-const handleGenerateReport = async () => {
-  if (!company) {
-    toast.error('Company Required', {
-      description: 'Please enter a company name or ticker symbol'
-    });
-    return;
-  }
-
-  // Check if user can generate a report (trial active and has remaining reports)
-  if (!canGenerateReport()) {
-    if (trialStatus.endDate && new Date() > trialStatus.endDate) {
-      toast.error('Trial Expired', {
-        description: 'Please upgrade to continue generating reports.'
+  const handleGenerateReport = async () => {
+    if (!company) {
+      toast.error('Company Required', {
+        description: 'Please enter a company name or ticker symbol'
       });
-    } else if (trialStatus.reportsUsed >= trialStatus.reportsLimit) {
-      toast.error('Trial Reports Exhausted', {
-        description: 'Please upgrade to generate more reports.'
-      });
-    }
-    return;
-  }
-
-  setIsLoading(true);
-  setError(null);
-
-  try {
-    if (onGenerateReport) {
-      onGenerateReport(company);
       return;
     }
 
-    // Try to use the deployed Firebase function if available
+    if (!canGenerateReport()) {
+      if (trialStatus.endDate && new Date() > trialStatus.endDate) {
+        toast.error('Trial Expired', {
+          description: 'Please upgrade to continue generating reports.'
+        });
+      } else if (trialStatus.reportsUsed >= trialStatus.reportsLimit) {
+        toast.error('Trial Reports Exhausted', {
+          description: 'Please upgrade to generate more reports.'
+        });
+      }
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
     try {
+      if (onGenerateReport) { // This allows parent components to override generation for demo purposes
+        onGenerateReport(company);
+        return;
+      }
+
       const response = await fetch('https://us-central1-ai-diligence.cloudfunctions.net/generateDueDiligence', {
         method: 'POST',
         headers: {
@@ -284,85 +102,39 @@ const handleGenerateReport = async () => {
         body: JSON.stringify({ companyName: company })
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        const structuredReport = result.data;
-        await trackReportGeneration();
-        setReport(structuredReport);
-        toast.success(`Report for ${company} generated successfully!`);
-        return;
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // Ignore if response is not JSON
+        }
+        const errorMessage = errorData?.error || errorData?.message || response.statusText || `Failed to generate report. Status: ${response.status}`;
+        throw new Error(errorMessage);
       }
-    } catch (apiError) {
-      console.warn('Failed to connect to Firebase Function, falling back to direct OpenAI:', apiError);
-      // Continue to fallback implementation
-    }
 
-    // Fallback: Generate report directly using OpenAI
-    const OPENAI_KEY = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('openai_key');
-    
-    if (!OPENAI_KEY) {
-      // Prompt for API key if not available
-      const apiKey = prompt("Please enter your OpenAI API key to generate a report:");
-      if (!apiKey) {
-        throw new Error("OpenAI API key is required to generate a report");
+      const result = await response.json();
+      const structuredReport = result.data; // Firebase function wraps the report in a 'data' field
+
+      if (!structuredReport) {
+        throw new Error("Received empty report data from server.");
       }
-      localStorage.setItem('openai_key', apiKey);
+
+      await trackReportGeneration(); // Track successful generation
+      setReport(structuredReport);
+      toast.success(`Report for ${company} generated successfully!`);
+
+    } catch (err: any) {
+      console.error('Error generating due diligence report:', err);
+      setError(err.message || 'Failed to generate report. Please try again.');
+      toast.error('Report Generation Failed', {
+        description: err.message || 'Failed to generate report. Please try again.'
+      });
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Create the prompt for OpenAI
-    const prompt = `Generate a comprehensive due diligence report for the company: ${company}.
+  };
 
-The report must include the following sections:
-1. Executive Summary - Including key findings, risk rating, and recommendation
-2. Financial Analysis - Including key metrics, trends, strengths and weaknesses
-3. Market Analysis - Including competitors, SWOT analysis, and market position
-4. Risk Assessment - Including financial, operational, market, and regulatory risks
-5. Recent Developments - Including news, filings, and strategic developments
-6. Conclusion - Summarizing the overall investment thesis
-
-Format your response in a clear, structured manner with proper headings and bullet points for key findings.`;
-    
-    // Call OpenAI API directly
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-        max_tokens: 4000
-      })
-    });
-    
-    if (!openaiResponse.ok) {
-      const errorData = await openaiResponse.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || 'Failed to generate report');
-    }
-    
-    const openaiResult = await openaiResponse.json();
-    const reportText = openaiResult.choices[0].message.content;
-    
-    // Convert the text response to a structured report
-    const structuredReport = convertTextToStructuredReport(reportText, company);
-
-    await trackReportGeneration();
-    setReport(structuredReport);
-    toast.success(`Report for ${company} generated successfully!`);
-  } catch (err: any) {
-    console.error('Error generating due diligence report:', err);
-    setError(err.message || 'Failed to generate report. Please try again.');
-    toast.error('Report Generation Failed', {
-      description: err.message || 'Failed to generate report. Please try again.'
-    });
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  // Restore useEffects
   useEffect(() => {
     if (preloadedReport) {
       setReport(preloadedReport);
@@ -381,308 +153,196 @@ Format your response in a clear, structured manner with proper headings and bull
     }
   }, [externalError]);
 
-  // Function to download the report as PDF
   const downloadReport = async () => {
     if (!report) return;
 
     try {
       const doc = new jsPDF();
-      const margin = 20; // Declare margin first
-      
-      // Add AI Diligence Pro logo and branding (positioned at top-left with 50px width)
+      const margin = 20;
       await addAiDiligenceLogoToPDF(doc, margin, 15, 50);
-      
-      // Add watermark and backlink to aidiligence.pro
       addWatermarkAndBacklink(doc);
       
-      // Add report content
       const pageWidth = doc.internal.pageSize.width;
       const pageHeight = doc.internal.pageSize.height;
-      let y = 40; // Start position after logo
+      let y = 40;
 
-      // Add title
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
       const title = `Due Diligence Report: ${report.companyName}`;
-      // Use standard signature: text(text, x, y, options?)
       doc.text(title, margin, y, { align: 'left' });
       y += 15;
 
-      // Add date
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       const date = `Generated on: ${new Date(report.timestamp || Date.now()).toLocaleDateString()}`;
-      // Use standard signature: text(text, x, y, options?)
-      doc.text(date, pageWidth / 2, y, { align: 'left' });
+      doc.text(date, pageWidth / 2, y, { align: 'left' }); // Center align was likely a mistake, changed to left for consistency
       y += 15;
 
-      // Helper function to add a section
-const addSection = (title: string, content: string, level: number = 1) => {
-  // Add section title
-  doc.setFontSize(level === 1 ? 14 : 12);
-  doc.setFont('helvetica', 'bold');
-  // Correct jsPDF text call with proper arguments
-  doc.text(title, margin, y, { align: 'left' });
-  y += 8;
-
-  // Add section content
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  
-  // Split text to fit page width
-  const textWidth = pageWidth - (margin * 2);
-  const splitText = doc.splitTextToSize(content, textWidth);
-  
-  // Check if we need a new page
-  if (y + (splitText.length * 5) > pageHeight - 20) {
-    doc.addPage();
-    y = 20;
-  }
-  
-  // Correct jsPDF text call with proper arguments
-  splitText.forEach((line, i) => {
-    doc.text(line, margin, y + (i * 6), { align: 'left' });
-  });
-  y += (splitText.length * 6) + 10;
-};
-
-      // Add executive summary
-      if (typeof report.executiveSummary === 'string') {
-        addSection('Executive Summary', report.executiveSummary);
-      } else {
-        addSection('Executive Summary', report.executiveSummary.overview);
-        
-        if (report.executiveSummary.keyFindings) {
-          const keyFindings = Array.isArray(report.executiveSummary.keyFindings) 
-            ? report.executiveSummary.keyFindings.join('\n• ')
-            : report.executiveSummary.keyFindings;
-          addSection('Key Findings', '• ' + keyFindings, 2);
+      const addSection = (title: string, content: string | string[] | undefined, level: number = 1) => {
+        if (content === undefined || (Array.isArray(content) && content.length === 0)) {
+          return;
         }
+        if (y + 20 > pageHeight - margin) { // Check space before adding section
+          doc.addPage();
+          y = margin;
+        }
+        doc.setFontSize(level === 1 ? 14 : 12);
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, margin, y, { align: 'left' });
+        y += 8;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
         
-        if (report.executiveSummary.riskRating) {
+        const textWidth = pageWidth - (margin * 2);
+        let textContent = '';
+        if (Array.isArray(content)) {
+          textContent = content.map(item => (typeof item === 'string' ? item.startsWith('• ') ? item : '• ' + item : item)).join('\n');
+        } else {
+          textContent = content;
+        }
+
+        const splitText = doc.splitTextToSize(textContent, textWidth);
+        
+        splitText.forEach((line: string) => {
+          if (y + 6 > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+          doc.text(line, margin, y, { align: 'left' });
+          y += 6;
+        });
+        y += 10; // Spacing after section
+      };
+
+      if (report.executiveSummary) {
+        if (typeof report.executiveSummary === 'string') {
+          addSection('Executive Summary', report.executiveSummary);
+        } else {
+          addSection('Executive Summary', report.executiveSummary.overview);
+          addSection('Key Findings', report.executiveSummary.keyFindings, 2);
           addSection('Risk Rating', report.executiveSummary.riskRating, 2);
-        }
-        
-        if (report.executiveSummary.recommendation) {
           addSection('Recommendation', report.executiveSummary.recommendation, 2);
         }
       }
 
-      // Add financial analysis
-      if (typeof report.financialAnalysis === 'string') {
-        addSection('Financial Analysis', report.financialAnalysis);
-      } else {
-        addSection('Financial Analysis', report.financialAnalysis.overview);
-        
-        // Add metrics if available
-        if (report.financialAnalysis.metrics) {
-          let metricsText = '';
-          for (const [key, value] of Object.entries(report.financialAnalysis.metrics)) {
-            metricsText += `${key}: ${value}\n`;
+      if (report.financialAnalysis) {
+        if (typeof report.financialAnalysis === 'string') {
+          addSection('Financial Analysis', report.financialAnalysis);
+        } else {
+          addSection('Financial Analysis', report.financialAnalysis.overview);
+          if (report.financialAnalysis.metrics && Object.keys(report.financialAnalysis.metrics).length > 0) {
+            const metricsArray = Object.entries(report.financialAnalysis.metrics).map(([key, value]) => `${key}: ${value}`);
+            addSection('Key Financial Metrics', metricsArray, 2);
           }
-          addSection('Key Financial Metrics', metricsText, 2);
-        }
-        
-        // Add trends if available
-        if (report.financialAnalysis.trends) {
-          const trends = Array.isArray(report.financialAnalysis.trends)
-            ? report.financialAnalysis.trends.join('\n• ')
-            : report.financialAnalysis.trends;
-          addSection('Financial Trends', trends, 2);
-        }
-        
-        // Add strengths if available
-        if (report.financialAnalysis.strengths) {
-          const strengths = Array.isArray(report.financialAnalysis.strengths)
-            ? report.financialAnalysis.strengths.join('\n• ')
-            : report.financialAnalysis.strengths;
-          addSection('Financial Strengths', '• ' + strengths, 2);
-        }
-        
-        // Add weaknesses if available
-        if (report.financialAnalysis.weaknesses) {
-          const weaknesses = Array.isArray(report.financialAnalysis.weaknesses)
-            ? report.financialAnalysis.weaknesses.join('\n• ')
-            : report.financialAnalysis.weaknesses;
-          addSection('Financial Weaknesses', '• ' + weaknesses, 2);
+          addSection('Financial Trends', report.financialAnalysis.trends, 2);
+          addSection('Financial Strengths', report.financialAnalysis.strengths, 2);
+          addSection('Financial Weaknesses', report.financialAnalysis.weaknesses, 2);
         }
       }
 
-      // Add market analysis
-      if (typeof report.marketAnalysis === 'string') {
-        addSection('Market Analysis', report.marketAnalysis);
-      } else {
-        addSection('Market Analysis', report.marketAnalysis.overview);
-        
-        // Add market position if available
-        if (report.marketAnalysis.position) {
-          addSection('Market Position', report.marketAnalysis.position, 2);
-        }
-        
-        // Add competitors if available
-        if (report.marketAnalysis.competitors && report.marketAnalysis.competitors.length > 0) {
-          let competitorsText = '';
-          if (typeof report.marketAnalysis.competitors[0] === 'string') {
-            competitorsText = '• ' + (report.marketAnalysis.competitors as string[]).join('\n• ');
-          } else {
-            const competitors = report.marketAnalysis.competitors as Array<{name: string, strengths?: string, weaknesses?: string}>;
-            for (const competitor of competitors) {
-              competitorsText += `• ${competitor.name}`;
-              if (competitor.strengths) competitorsText += `\n  Strengths: ${competitor.strengths}`;
-              if (competitor.weaknesses) competitorsText += `\n  Weaknesses: ${competitor.weaknesses}`;
-              competitorsText += '\n';
-            }
+      if (report.marketAnalysis) {
+        if (typeof report.marketAnalysis === 'string') {
+          addSection('Market Analysis', report.marketAnalysis);
+        } else {
+          addSection('Market Analysis', report.marketAnalysis.overview);
+          addSection('Market Position', report.marketAnalysis.position || report.marketAnalysis.marketPosition, 2);
+          if (report.marketAnalysis.competitors && report.marketAnalysis.competitors.length > 0) {
+            const competitorsArray = (report.marketAnalysis.competitors as any[]).map(comp => typeof comp === 'string' ? comp : `${comp.name}${comp.strengths ? ` (Strengths: ${comp.strengths})` : ''}${comp.weaknesses ? ` (Weaknesses: ${comp.weaknesses})` : ''}`);
+            addSection('Key Competitors', competitorsArray, 2);
           }
-          addSection('Key Competitors', competitorsText, 2);
-        }
-        
-        // Add SWOT analysis if available
-        if (report.marketAnalysis.swot) {
-          let swotText = '';
-          if (report.marketAnalysis.swot.strengths) {
-            const strengths = Array.isArray(report.marketAnalysis.swot.strengths)
-              ? report.marketAnalysis.swot.strengths.join('\n• ')
-              : report.marketAnalysis.swot.strengths;
-            swotText += `Strengths:\n• ${strengths}\n\n`;
+          if (report.marketAnalysis.swot) {
+            let swotStrings: string[] = [];
+            if(report.marketAnalysis.swot.strengths) swotStrings = swotStrings.concat("Strengths:", Array.isArray(report.marketAnalysis.swot.strengths) ? report.marketAnalysis.swot.strengths : [report.marketAnalysis.swot.strengths]);
+            if(report.marketAnalysis.swot.weaknesses) swotStrings = swotStrings.concat("Weaknesses:", Array.isArray(report.marketAnalysis.swot.weaknesses) ? report.marketAnalysis.swot.weaknesses : [report.marketAnalysis.swot.weaknesses]);
+            if(report.marketAnalysis.swot.opportunities) swotStrings = swotStrings.concat("Opportunities:", Array.isArray(report.marketAnalysis.swot.opportunities) ? report.marketAnalysis.swot.opportunities : [report.marketAnalysis.swot.opportunities]);
+            if(report.marketAnalysis.swot.threats) swotStrings = swotStrings.concat("Threats:", Array.isArray(report.marketAnalysis.swot.threats) ? report.marketAnalysis.swot.threats : [report.marketAnalysis.swot.threats]);
+            addSection('SWOT Analysis', swotStrings, 2);
           }
-          if (report.marketAnalysis.swot.weaknesses) {
-            const weaknesses = Array.isArray(report.marketAnalysis.swot.weaknesses)
-              ? report.marketAnalysis.swot.weaknesses.join('\n• ')
-              : report.marketAnalysis.swot.weaknesses;
-            swotText += `Weaknesses:\n• ${weaknesses}\n\n`;
-          }
-          if (report.marketAnalysis.swot.opportunities) {
-            const opportunities = Array.isArray(report.marketAnalysis.swot.opportunities)
-              ? report.marketAnalysis.swot.opportunities.join('\n• ')
-              : report.marketAnalysis.swot.opportunities;
-            swotText += `Opportunities:\n• ${opportunities}\n\n`;
-          }
-          if (report.marketAnalysis.swot.threats) {
-            const threats = Array.isArray(report.marketAnalysis.swot.threats)
-              ? report.marketAnalysis.swot.threats.join('\n• ')
-              : report.marketAnalysis.swot.threats;
-            swotText += `Threats:\n• ${threats}`;
-          }
-          addSection('SWOT Analysis', swotText, 2);
         }
       }
 
-      // Add risk assessment
-      if (typeof report.riskAssessment === 'string') {
-        addSection('Risk Assessment', report.riskAssessment);
-      } else {
-        addSection('Risk Assessment', report.riskAssessment.overview);
-        
-        // Add financial risks if available
-        if (report.riskAssessment.financial) {
-          addSection('Financial Risks', report.riskAssessment.financial, 2);
-        }
-        
-        // Add operational risks if available
-        if (report.riskAssessment.operational) {
-          addSection('Operational Risks', report.riskAssessment.operational, 2);
-        }
-        
-        // Add market risks if available
-        if (report.riskAssessment.market) {
-          addSection('Market Risks', report.riskAssessment.market, 2);
-        }
-        
-        // Add regulatory risks if available
-        if (report.riskAssessment.regulatory) {
-          addSection('Regulatory Risks', report.riskAssessment.regulatory, 2);
-        }
-        
-        // Add ESG considerations if available
-        if (report.riskAssessment.esgConsiderations) {
-          addSection('ESG Considerations', report.riskAssessment.esgConsiderations, 2);
+      if (report.riskAssessment) {
+        if (typeof report.riskAssessment === 'string') {
+          addSection('Risk Assessment', report.riskAssessment);
+        } else {
+          addSection('Risk Assessment', report.riskAssessment.overview);
+          if(report.riskAssessment.riskFactors) {
+            addSection('Financial Risks', report.riskAssessment.riskFactors.financial, 2);
+            addSection('Operational Risks', report.riskAssessment.riskFactors.operational, 2);
+            addSection('Market Risks', report.riskAssessment.riskFactors.market, 2);
+            addSection('Regulatory Risks', report.riskAssessment.riskFactors.regulatory, 2);
+            if(report.riskAssessment.riskFactors.esg) addSection('ESG Risks', report.riskAssessment.riskFactors.esg, 2);
+          }
+          addSection('Overall Risk Rating', report.riskAssessment.riskRating, 2);
         }
       }
 
-      // Add recent developments if available
       if (report.recentDevelopments) {
-        addSection('Recent Developments', 'Key recent events and developments that may impact the company.');
-        
-        // Add news if available
+        addSection('Recent Developments', "Key recent events and developments that may impact the company.");
         if (report.recentDevelopments.news && report.recentDevelopments.news.length > 0) {
-          let newsText = '';
-          for (const item of report.recentDevelopments.news) {
-            newsText += `• ${item.title} (${item.date})\n  ${item.summary || item.description || ''}\n\n`;
-          }
-          addSection('Recent News', newsText, 2);
+           const newsArray = report.recentDevelopments.news.map(item => `${item.title} (${item.date || item.publishedAt}): ${item.summary || item.description}`);
+           addSection('Recent News', newsArray, 2);
         }
-        
-        // Add filings if available
         if (report.recentDevelopments.filings && report.recentDevelopments.filings.length > 0) {
-          let filingsText = '';
-          for (const item of report.recentDevelopments.filings) {
-            filingsText += `• ${item.type || ''} (${item.date})\n  ${item.description || ''}\n\n`;
-          }
-          addSection('Recent Filings', filingsText, 2);
+           const filingsArray = report.recentDevelopments.filings.map(item => `${item.type || item.title} (${item.date}): ${item.description}`);
+           addSection('Recent Filings', filingsArray, 2);
         }
-        
-        // Add strategic initiatives if available
         if (report.recentDevelopments.strategic) {
           if (Array.isArray(report.recentDevelopments.strategic)) {
-            if (typeof report.recentDevelopments.strategic[0] === 'string') {
-              const strategic = (report.recentDevelopments.strategic as string[]).join('\n• ');
-              addSection('Strategic Initiatives', '• ' + strategic, 2);
-            } else {
-              let strategicText = '';
-              for (const item of report.recentDevelopments.strategic as Array<{title: string, date: string, summary?: string, description?: string}>) {
-                strategicText += `• ${item.title} (${item.date})\n  ${item.summary || item.description || ''}\n\n`;
-              }
-              addSection('Strategic Initiatives', strategicText, 2);
-            }
+            const strategicArray = (report.recentDevelopments.strategic as any[]).map(item => typeof item === 'string' ? item : `${item.title} (${item.date}): ${item.summary || item.description}`);
+            addSection('Strategic Initiatives', strategicArray, 2);
           } else {
-            addSection('Strategic Initiatives', report.recentDevelopments.strategic as string, 2);
+             addSection('Strategic Initiatives', report.recentDevelopments.strategic as string, 2);
           }
         }
       }
 
-      // Add conclusion if available
       if (report.conclusion) {
         addSection('Conclusion', report.conclusion);
       }
 
-      // Add disclaimer
-      doc.addPage();
-      y = 20;
+      if (y + 30 > pageHeight - margin) { // Check for space for disclaimer
+        doc.addPage();
+        y = margin;
+      }
       doc.setFontSize(10);
       doc.setFont('helvetica', 'italic');
       const disclaimer = 'Disclaimer: This report is generated using AI and should be used for informational purposes only. ' +
                         'It does not constitute investment advice. Always perform your own due diligence before making investment decisions.';
-const disclaimerText = doc.splitTextToSize(disclaimer, pageWidth - (margin * 2));
-// Correct jsPDF text call with proper arguments
-disclaimerText.forEach((line, i) => {
-  doc.text(line, margin, y + (i * 6), { align: 'left' });
-});
+      const disclaimerText = doc.splitTextToSize(disclaimer, pageWidth - (margin * 2));
+      disclaimerText.forEach((line: string, i: number) => {
+        if (y + 6 > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(line, margin, y + (i * 6), { align: 'left' });
+      });
       y += (disclaimerText.length * 6) + 10;
 
-      // Add generation info
       doc.setFont('helvetica', 'normal');
-      // Correct jsPDF text call (no options needed here)
-doc.text(`Report generated by aidiligence.pro on ${new Date().toLocaleDateString()}`, margin, y, { align: 'left' });
+      if (y + 6 > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.text(`Report generated by aidiligence.pro on ${new Date().toLocaleDateString()}`, margin, y, { align: 'left' });
 
-      // Save the PDF
       doc.save(`${report.companyName.replace(/\s+/g, '_')}_Due_Diligence_Report.pdf`);
       
       toast.success('PDF downloaded successfully!');
-    } catch (err) {
+    } catch (err: any) { // Ensure 'err' is typed
       console.error('Error generating PDF:', err);
       toast.error('PDF Generation Failed', {
-        description: 'Failed to generate PDF. Please try again.'
+        description: err.message || 'Failed to generate PDF. Please try again.'
       });
     }
   };
 
   return (
     <div className={cn("space-y-6", className)}>
-      {/* Trial Status */}
       {!isLandingDemo && user && <TrialStatus />}
       
-      {/* Report Generation Form - Use internal state */}
-      {!report && !error && !isLoading && ( 
+      {!report && !isLoading && !error && (
       <Card>
         <CardHeader>
           <CardTitle>Generate Due Diligence Report</CardTitle>
@@ -694,15 +354,15 @@ doc.text(`Report generated by aidiligence.pro on ${new Date().toLocaleDateString
               <Input
                 id="company"
                 placeholder="e.g., Apple or AAPL"
-                value={company} // Restore state
-                onChange={(e) => setCompany(e.target.value)} // Restore state
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
                 className="flex-1"
               />
               <Button 
                 onClick={handleGenerateReport} 
-                disabled={isLoading || !company} // Restore state
+                disabled={isLoading || !company}
               >
-                {isLoading ? ( // Restore state
+                {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Generating...
@@ -717,7 +377,6 @@ doc.text(`Report generated by aidiligence.pro on ${new Date().toLocaleDateString
             </div>
           </div>
           
-          {/* Advanced Options Toggle */}
           <div>
             <Button 
               variant="ghost" 
@@ -734,32 +393,30 @@ doc.text(`Report generated by aidiligence.pro on ${new Date().toLocaleDateString
             </Button>
           </div>
           
-          {/* Advanced Options */}
           {showOptions && (
             <div className="border rounded-md p-4 space-y-4">
               <div className="space-y-2">
-                <h3 className="text-sm font-medium">Report Format</h3>
+                <h3 className="text-sm font-medium">Report Format (PDF)</h3>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="includeCharts" 
                     checked={showCharts}
-                    onCheckedChange={(checked) => setShowCharts(!!checked)}
+                    onCheckedChange={(checked) => setShowCharts(!!checked)} // Ensure type compatibility
                   />
-                  <Label htmlFor="includeCharts">Include charts and visualizations</Label>
+                  <Label htmlFor="includeCharts">Include charts and visualizations in PDF</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="includeTables" 
                     checked={showTables}
-                    onCheckedChange={(checked) => setShowTables(!!checked)}
+                    onCheckedChange={(checked) => setShowTables(!!checked)} // Ensure type compatibility
                   />
-                  <Label htmlFor="includeTables">Include data tables</Label>
+                  <Label htmlFor="includeTables">Include data tables in PDF</Label>
                 </div>
               </div>
             </div>
           )}
           
-          {/* Error message - Use internal state */}
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -771,21 +428,27 @@ doc.text(`Report generated by aidiligence.pro on ${new Date().toLocaleDateString
       </Card>
       )}
       
-      {/* Report Display - Use internal state */}
+      {isLoading && (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-4 text-lg">Generating report, please wait...</p>
+        </div>
+      )}
+
       {report && !isLoading && !error && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Due Diligence Report: {report.companyName}</CardTitle>
-            <Button onClick={downloadReport} disabled={!report}> {/* Use internal state */}
+            <Button onClick={downloadReport} disabled={!report}>
               <FileText className="mr-2 h-4 w-4" />
               Download PDF
             </Button>
           </CardHeader>
           <CardContent>
             <SimpleReportDisplay 
-              report={report} // Use internal state
-              showCharts={showCharts}
-              showTables={showTables}
+              report={report}
+              showCharts={showCharts} // This prop might be for PDF generation, ensure SimpleReportDisplay handles it or remove
+              showTables={showTables} // This prop might be for PDF generation, ensure SimpleReportDisplay handles it or remove
             />
           </CardContent>
         </Card>
