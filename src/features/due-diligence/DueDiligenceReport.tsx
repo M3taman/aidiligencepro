@@ -17,12 +17,14 @@ import { useReportUsage } from '@/hooks/useReportUsage';
 // Removed Select related imports as they don't appear to be used
 import { Checkbox } from '@/components/ui/checkbox';
 import TrialStatus from '@/components/TrialStatus';
+import { Watermark } from '@/components/Watermark';
 
 // Import components and utilities
 // Removed ReportOptions, ReportDisplay as they seem unused now
 import SimpleReportDisplay from './components/SimpleReportDisplay';
+import QuoteTicker from '@/components/QuoteTicker';
 // Removed formatReport as it was likely for the old parser
-import { addAiDiligenceLogoToPDF, addWatermarkAndBacklink } from './utils/pdfUtils.ts';
+import { addAiDiligenceLogoToPDF, addWatermarkAndBacklink } from './utils/pdfUtils';
 import { DueDiligenceReportType, ReportGenerationOptions } from "./types"; // Assuming ReportGenerationOptions is still needed for PDF or other options
 import jsPDF from 'jspdf';
 
@@ -436,22 +438,31 @@ export function DueDiligenceReport({
       )}
 
       {report && !isLoading && !error && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Due Diligence Report: {report.companyName}</CardTitle>
-            <Button onClick={downloadReport} disabled={!report}>
-              <FileText className="mr-2 h-4 w-4" />
-              Download PDF
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <SimpleReportDisplay 
-              report={report}
-              showCharts={showCharts} // This prop might be for PDF generation, ensure SimpleReportDisplay handles it or remove
-              showTables={showTables} // This prop might be for PDF generation, ensure SimpleReportDisplay handles it or remove
-            />
-          </CardContent>
-        </Card>
+        <>
+          <Watermark />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div className="flex flex-col">
+                  <CardTitle>Due Diligence Report: {report.companyName}</CardTitle>
+                  {report.ticker && (
+                    <QuoteTicker symbol={report.ticker} pollMs={10000} />
+                  )}
+                </div>
+              <Button onClick={downloadReport} disabled={!report}>
+                <FileText className="mr-2 h-4 w-4" />
+                Download PDF
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <SimpleReportDisplay 
+                report={report}
+                showCharts={showCharts} // This prop might be for PDF generation, ensure SimpleReportDisplay handles it or remove
+                showTables={showTables} // This prop might be for PDF generation, ensure SimpleReportDisplay handles it or remove
+              />
+            </CardContent>
+          </Card>
+        </>
+
       )}
     </div>
   );

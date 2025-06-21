@@ -1952,7 +1952,8 @@ Ensure all string content is properly escaped within the JSON.
   }
 }
 
-// Exported Firebase Function
+// Exported Firebase Functions
+export { streamQuote } from './streamQuotes';
 export const generateDueDiligence = onRequest(
   {
     memory: "1GiB",
