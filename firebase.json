@@ -1,10 +1,6 @@
 {
-  "functions": {
-    "source": "functions",
-    "runtime": "nodejs18"
-  },
   "hosting": {
-    "public": "public",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -12,23 +8,35 @@
     ],
     "rewrites": [
       {
-        "source": "/api/generateDueDiligence",
-        "function": "generateDueDiligence"
-      },
-      {
-        "source": "/api/proxy",
-        "function": "apiProxy"
-      },
-      {
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "headers": [
+      {
+        "source": "/api/**",
+        "headers": [
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          }
+        ]
+      }
     ]
   },
-  "emulators": {
-    "functions": {
-      "host": "localhost",
-      "port": 5002
-    }
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs18",
+    "predeploy": [
+      "yarn --prefix \"$RESOURCE_DIR\" install",
+      "yarn --prefix \"$RESOURCE_DIR\" build"
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
