@@ -1,10 +1,7 @@
 import { onCall } from 'firebase-functions/v2/https';
-import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import axios from 'axios';
 
-// Initialize Firebase Admin
-initializeApp();
 const db = getFirestore();
 
 // MCP Resource: Real-time stock analysis
