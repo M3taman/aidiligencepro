@@ -4,13 +4,15 @@ import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyABbCv-N5W1j1wETdW6DRQBNnAuF3RWWqg",
+  authDomain: "ai-diligence.firebaseapp.com",
+  projectId: "ai-diligence",
+  storageBucket: "ai-diligence.firebasestorage.app",
+  messagingSenderId: "1039760524298",
+  appId: "1:1039760524298:web:9f4b62b372f86e18e5cbf3"
 };
+
+console.log('Firebase config:', firebaseConfig);
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
