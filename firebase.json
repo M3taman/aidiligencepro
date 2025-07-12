@@ -26,10 +26,10 @@
   },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs18",
+    "runtime": "nodejs20",
     "predeploy": [
-      "yarn --prefix \"$RESOURCE_DIR\" install",
-      "yarn --prefix \"$RESOURCE_DIR\" build"
+      "npm --prefix \"$RESOURCE_DIR\" install",
+      "npm --prefix \"$RESOURCE_DIR\" run build"
     ]
   },
   "firestore": {
