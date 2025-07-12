@@ -56,9 +56,6 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
   body {
     @apply bg-background text-foreground font-inter antialiased;
     background-image: radial-gradient(
