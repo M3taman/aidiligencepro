@@ -111,7 +111,7 @@ const Home = () => {
         </section>
 
         {/* Features Grid */}
-        <section className="py-20 bg-background/50 border-y border-border">
+        <section className="py-20 bg-background/50 border-y border-gray-200 dark:border-gray-800">
           <div className="container px-4 mx-auto">
             <div className="max-w-5xl mx-auto">
               <div className="text-center mb-16">
