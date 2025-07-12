@@ -76,10 +76,10 @@ export const MCPDashboard: React.FC = () => {
         <div className="text-center">
           <div className="loading-spinner mb-4"></div>
           <h2 className="text-2xl font-semibold mb-2">Connecting to MCP Server</h2>
-          <p className="text-muted-foreground">Initializing real-time data connections...</p>
+          <p className="text-secondary">Initializing real-time data connections...</p>
           {state.error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-600">Error: {state.error}</p>
+            <div className="mt-4 p-4" style={{backgroundColor: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px'}}>
+              <p style={{color: '#dc2626'}}>Error: {state.error}</p>
             </div>
           )}
         </div>
@@ -93,13 +93,14 @@ export const MCPDashboard: React.FC = () => {
       
       {/* Stock Symbol Selector */}
       <div className="mb-6">
-        <label className="block text-sm font-medium mb-2">
+        <label className="block font-medium mb-2">
           Select Stock Symbol:
         </label>
         <select 
           value={activeSymbol} 
           onChange={(e) => setActiveSymbol(e.target.value)}
-          className="px-4 py-2 border rounded-lg"
+          className="input"
+          style={{width: '200px'}}
         >
           <option value="AAPL">Apple (AAPL)</option>
           <option value="MSFT">Microsoft (MSFT)</option>
@@ -125,20 +126,20 @@ export const MCPDashboard: React.FC = () => {
               </div>
               <div className="flex justify-between mb-2">
                 <span>Volatility:</span>
-                <span className={stockAnalysis.volatility > 2 ? 'text-red-600' : 'text-green-600'}>
+                <span style={{color: stockAnalysis.volatility > 2 ? '#dc2626' : '#059669'}}>
                   {stockAnalysis.volatility.toFixed(2)}%
                 </span>
               </div>
               <div className="flex justify-between mb-4">
                 <span>Recommendation:</span>
-                <span className={`font-semibold ${
-                  stockAnalysis.recommendation === 'LOW_RISK' ? 'text-green-600' :
-                  stockAnalysis.recommendation === 'MEDIUM_RISK' ? 'text-yellow-600' : 'text-red-600'
-                }`}>
+                <span className="font-semibold" style={{
+                  color: stockAnalysis.recommendation === 'LOW_RISK' ? '#059669' :
+                        stockAnalysis.recommendation === 'MEDIUM_RISK' ? '#d97706' : '#dc2626'
+                }}>
                   {stockAnalysis.recommendation}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p style={{fontSize: '0.875rem', color: '#64748b'}}>
                 Last updated: {new Date(stockAnalysis.lastUpdated).toLocaleString()}
               </p>
             </div>
@@ -183,26 +184,34 @@ export const MCPDashboard: React.FC = () => {
         <div className="card">
           <h3 className="text-xl font-semibold mb-4">Real-time Alerts</h3>
           {alerts.length > 0 ? (
-            <div className="space-y-2">
+            <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
               {alerts.slice(0, 3).map((alert, index) => (
                 <div 
                   key={index}
-                  className={`p-3 rounded-lg border ${
-                    alert.severity === 'HIGH' ? 'bg-red-50 border-red-200' :
-                    alert.severity === 'MEDIUM' ? 'bg-yellow-50 border-yellow-200' :
-                    'bg-blue-50 border-blue-200'
-                  }`}
+                  className="p-3"
+                  style={{
+                    borderRadius: '8px',
+                    border: '1px solid',
+                    backgroundColor: alert.severity === 'HIGH' ? '#fee2e2' :
+                                    alert.severity === 'MEDIUM' ? '#fef3c7' : '#dbeafe',
+                    borderColor: alert.severity === 'HIGH' ? '#fecaca' :
+                                alert.severity === 'MEDIUM' ? '#fde68a' : '#bfdbfe'
+                  }}
                 >
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="font-semibold">{alert.symbol}</span>
-                      <p className="text-sm">{alert.message}</p>
+                      <p style={{fontSize: '0.875rem'}}>{alert.message}</p>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      alert.severity === 'HIGH' ? 'bg-red-100 text-red-800' :
-                      alert.severity === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-blue-100 text-blue-800'
-                    }`}>
+                    <span 
+                      className="badge"
+                      style={{
+                        backgroundColor: alert.severity === 'HIGH' ? '#fee2e2' :
+                                        alert.severity === 'MEDIUM' ? '#fef3c7' : '#dbeafe',
+                        color: alert.severity === 'HIGH' ? '#991b1b' :
+                              alert.severity === 'MEDIUM' ? '#92400e' : '#1e40af'
+                      }}
+                    >
                       {alert.severity}
                     </span>
                   </div>
@@ -227,7 +236,7 @@ export const MCPDashboard: React.FC = () => {
         </button>
 
         {dueDiligenceReport && (
-          <div className="mt-6 p-6 bg-secondary rounded-lg">
+          <div className="mt-6 p-6" style={{backgroundColor: '#f8fafc', borderRadius: '8px'}}>
             <h4 className="text-xl font-semibold mb-4">
               Due Diligence Report: {dueDiligenceReport.companyName}
             </h4>
@@ -235,27 +244,31 @@ export const MCPDashboard: React.FC = () => {
             <div className="grid grid-2 gap-6 mb-6">
               <div>
                 <h5 className="font-semibold mb-2">Executive Summary</h5>
-                <p className="text-sm">{dueDiligenceReport.executiveSummary}</p>
+                <p style={{fontSize: '0.875rem'}}>{dueDiligenceReport.executiveSummary}</p>
               </div>
               
               <div>
                 <h5 className="font-semibold mb-2">Investment Recommendation</h5>
                 <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                    dueDiligenceReport.recommendation === 'BUY' ? 'bg-green-100 text-green-800' :
-                    dueDiligenceReport.recommendation === 'SELL' ? 'bg-red-100 text-red-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
+                  <span 
+                    className="badge"
+                    style={{
+                      backgroundColor: dueDiligenceReport.recommendation === 'BUY' ? '#dcfce7' :
+                                      dueDiligenceReport.recommendation === 'SELL' ? '#fee2e2' : '#fef3c7',
+                      color: dueDiligenceReport.recommendation === 'BUY' ? '#166534' :
+                            dueDiligenceReport.recommendation === 'SELL' ? '#991b1b' : '#92400e'
+                    }}
+                  >
                     {dueDiligenceReport.recommendation}
                   </span>
-                  <span className="text-sm text-muted-foreground">
+                  <span style={{fontSize: '0.875rem', color: '#64748b'}}>
                     Confidence: {dueDiligenceReport.confidence}%
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="text-sm text-muted-foreground">
+            <div style={{fontSize: '0.875rem', color: '#64748b'}}>
               Generated: {new Date(dueDiligenceReport.generatedAt).toLocaleString()}
             </div>
           </div>
@@ -268,21 +281,21 @@ export const MCPDashboard: React.FC = () => {
         <div className="grid grid-2 gap-4">
           <div>
             <h5 className="font-semibold mb-2">Data Sources Connected</h5>
-            <ul className="text-sm space-y-1">
+            <ul style={{fontSize: '0.875rem', display: 'flex', flexDirection: 'column', gap: '0.25rem'}}>
               <li className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <span className="status-dot status-success"></span>
                 Alpha Vantage (Real-time Market Data)
               </li>
               <li className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <span className="status-dot status-success"></span>
                 SEC API (Regulatory Filings)
               </li>
               <li className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <span className="status-dot status-success"></span>
                 AIML API (AI Analysis)
               </li>
               <li className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                <span className="status-dot status-warning"></span>
                 ESG Data Provider (Mock Data)
               </li>
             </ul>
@@ -290,7 +303,7 @@ export const MCPDashboard: React.FC = () => {
           
           <div>
             <h5 className="font-semibold mb-2">Premium Features</h5>
-            <ul className="text-sm space-y-1">
+            <ul style={{fontSize: '0.875rem', display: 'flex', flexDirection: 'column', gap: '0.25rem'}}>
               <li>✅ Real-time Market Analysis</li>
               <li>✅ AI-Powered Due Diligence Reports</li>
               <li>✅ ESG Rating Integration</li>
