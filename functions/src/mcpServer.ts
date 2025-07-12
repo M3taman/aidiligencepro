@@ -8,8 +8,6 @@ if (getApps().length === 0) {
   initializeApp();
 }
 
-const db = getFirestore();
-
 // Define secrets
 const aimlApiKey = defineSecret('AIML_API_KEY');
 const alphaVantageKey = defineSecret('ALPHA_VANTAGE_API_KEY');
