@@ -3,14 +3,27 @@ import React, { useEffect, useRef } from 'react';
 interface PayPalButtonProps {
   amount: string;
   currency?: string;
-  onSuccess?: (details: any) => void;
-  onError?: (error: any) => void;
+  onSuccess?: (details: unknown) => void;
+  onError?: (error: unknown) => void;
 }
 
 declare global {
   interface Window {
-    paypal?: any;
+    paypal?: { // More specific type for paypal object
+      Buttons: (options: Record<string, unknown>) => { // Use Record<string, unknown> for options
+        render: (container: HTMLDivElement) => void;
+      };
+    };
   }
+}
+
+interface PayPalOrderActions {
+  create: (order: Record<string, unknown>) => Promise<string>;
+  capture: () => Promise<Record<string, unknown>>;
+}
+
+interface PayPalActions {
+  order: PayPalOrderActions;
 }
 
 const PayPalButton: React.FC<PayPalButtonProps> = ({
@@ -28,9 +41,9 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({
       script.src = `https://www.paypal.com/sdk/js?client-id=AQssVsG_YrsgV2JzMc4CQK_VhpYgfR00tT1752ZcDG_qu7BMP6slb39SjZ1GrbeG_j6lwleZnD-n44qi&currency=${currency}`;
       script.async = true;
       script.onload = () => renderButton();
-      script.onerror = (err) => {
+      script.onerror = (err: Event | string) => {
         console.error('PayPal SDK failed to load', err);
-        onError?.(err);
+        onError?.({ message: typeof err === 'string' ? err : err.type });
       };
       document.body.appendChild(script);
     } else {
@@ -47,7 +60,7 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({
           shape: 'rect',
           label: 'paypal',
         },
-        createOrder: (data: any, actions: any) => {
+        createOrder: (data: Record<string, unknown>, actions: PayPalActions) => {
           return actions.order.create({
             purchase_units: [
               {
@@ -59,17 +72,17 @@ const PayPalButton: React.FC<PayPalButtonProps> = ({
             ],
           });
         },
-        onApprove: async (data: any, actions: any) => {
+        onApprove: async (data: Record<string, unknown>, actions: PayPalActions) => {
           try {
             const details = await actions.order.capture();
             console.log('Payment approved:', details);
             onSuccess?.(details);
-          } catch (err) {
+          } catch (err: unknown) {
             console.error('Payment capture error:', err);
-            onError?.(err);
+            onError?.({ message: err instanceof Error ? err.message : String(err) });
           }
         },
-        onError: (err: any) => {
+        onError: (err: unknown) => {
           console.error('PayPal Button error:', err);
           onError?.(err);
         },

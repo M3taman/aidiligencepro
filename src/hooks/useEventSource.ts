@@ -5,7 +5,7 @@ interface EventData<T> {
   event?: string;
 }
 
-export function useEventSource<T = any>(
+export function useEventSource<T = unknown>(
   url: string | null,
   { start = true }: { start?: boolean } = {}
 ) {
@@ -28,7 +28,7 @@ export function useEventSource<T = any>(
     es.onmessage = (e) => {
       try {
         const parsed: EventData<T> = JSON.parse(e.data);
-        setData(parsed as any);
+        setData(parsed.data);
       } catch {
         // non-json, ignore
       }

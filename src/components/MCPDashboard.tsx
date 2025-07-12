@@ -1,30 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useMCP } from '../hooks/useMCP';
+import { DueDiligenceReportType, ESGRatings } from '../features/due-diligence/types';
 
-interface Alert {
-  type: string;
-  symbol: string;
-  message: string;
-  severity: 'HIGH' | 'MEDIUM' | 'LOW';
-  timestamp: string;
-}
 
-interface StockAnalysis {
-  symbol: string;
-  currentPrice: number;
-  movingAverage: number;
-  volatility: number;
-  recommendation: string;
-  lastUpdated: string;
-}
 
 export const MCPDashboard: React.FC = () => {
   const { state, analyzeStock, generateDueDiligenceReport, getRealTimeAlerts, getESGRatings } = useMCP();
   const [activeSymbol, setActiveSymbol] = useState('AAPL');
   const [stockAnalysis, setStockAnalysis] = useState<StockAnalysis | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [dueDiligenceReport, setDueDiligenceReport] = useState<any>(null);
-  const [esgRatings, setEsgRatings] = useState<any>(null);
+  const [dueDiligenceReport, setDueDiligenceReport] = useState<DueDiligenceReportType | null>(null);
+  const [esgRatings, setEsgRatings] = useState<ESGRatings | null>(null);
+
+  const loadStockAnalysis = useCallback(async () => {
+    try {
+      const analysis = await analyzeStock(activeSymbol);
+      setStockAnalysis(analysis);
+    } catch (error: unknown) {
+      console.error('Failed to load stock analysis:', error);
+    }
+  }, [activeSymbol, analyzeStock]);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const alertData = await getRealTimeAlerts('portfolio-1');
+      setAlerts(alertData.alerts);
+    } catch (error: unknown) {
+      console.error('Failed to load alerts:', error);
+    }
+  }, [getRealTimeAlerts]);
 
   // Load initial data
   useEffect(() => {
@@ -32,31 +36,13 @@ export const MCPDashboard: React.FC = () => {
       loadStockAnalysis();
       loadAlerts();
     }
-  }, [state.connected, activeSymbol]);
-
-  const loadStockAnalysis = async () => {
-    try {
-      const analysis = await analyzeStock(activeSymbol);
-      setStockAnalysis(analysis);
-    } catch (error) {
-      console.error('Failed to load stock analysis:', error);
-    }
-  };
-
-  const loadAlerts = async () => {
-    try {
-      const alertData = await getRealTimeAlerts('portfolio-1');
-      setAlerts(alertData.alerts);
-    } catch (error) {
-      console.error('Failed to load alerts:', error);
-    }
-  };
+  }, [state.connected, loadStockAnalysis, loadAlerts]);
 
   const handleGenerateReport = async () => {
     try {
-      const report = await generateDueDiligenceReport(activeSymbol, { ticker: activeSymbol });
+      const report = await generateDueDiligenceReport(activeSymbol, {});
       setDueDiligenceReport(report);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to generate report:', error);
     }
   };
@@ -65,7 +51,7 @@ export const MCPDashboard: React.FC = () => {
     try {
       const esg = await getESGRatings(activeSymbol);
       setEsgRatings(esg);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to get ESG ratings:', error);
     }
   };
@@ -244,26 +230,30 @@ export const MCPDashboard: React.FC = () => {
             <div className="grid grid-2 gap-6 mb-6">
               <div>
                 <h5 className="font-semibold mb-2">Executive Summary</h5>
-                <p style={{fontSize: '0.875rem'}}>{dueDiligenceReport.executiveSummary}</p>
+                <p style={{fontSize: '0.875rem'}}>{typeof dueDiligenceReport.executiveSummary === 'string' ? dueDiligenceReport.executiveSummary : dueDiligenceReport.executiveSummary?.overview}</p>
               </div>
               
               <div>
                 <h5 className="font-semibold mb-2">Investment Recommendation</h5>
                 <div className="flex items-center gap-2">
-                  <span 
-                    className="badge"
-                    style={{
-                      backgroundColor: dueDiligenceReport.recommendation === 'BUY' ? '#dcfce7' :
-                                      dueDiligenceReport.recommendation === 'SELL' ? '#fee2e2' : '#fef3c7',
-                      color: dueDiligenceReport.recommendation === 'BUY' ? '#166534' :
-                            dueDiligenceReport.recommendation === 'SELL' ? '#991b1b' : '#92400e'
-                    }}
-                  >
-                    {dueDiligenceReport.recommendation}
-                  </span>
-                  <span style={{fontSize: '0.875rem', color: '#64748b'}}>
-                    Confidence: {dueDiligenceReport.confidence}%
-                  </span>
+                  {typeof dueDiligenceReport.executiveSummary !== 'string' && dueDiligenceReport.executiveSummary?.recommendation && (
+                    <span 
+                      className="badge"
+                      style={{
+                        backgroundColor: dueDiligenceReport.executiveSummary.recommendation === 'BUY' ? '#dcfce7' :
+                                        dueDiligenceReport.executiveSummary.recommendation === 'SELL' ? '#fee2e2' : '#fef3c7',
+                        color: dueDiligenceReport.executiveSummary.recommendation === 'BUY' ? '#166534' :
+                              dueDiligenceReport.executiveSummary.recommendation === 'SELL' ? '#991b1b' : '#92400e'
+                      }}
+                    >
+                      {dueDiligenceReport.executiveSummary.recommendation}
+                    </span>
+                  )}
+                  {typeof dueDiligenceReport.executiveSummary !== 'string' && dueDiligenceReport.executiveSummary?.confidence && (
+                    <span style={{fontSize: '0.875rem', color: '#64748b'}}>
+                      Confidence: {dueDiligenceReport.executiveSummary.confidence}%
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

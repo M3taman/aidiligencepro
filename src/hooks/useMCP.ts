@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { ReportGenerationOptions, DueDiligenceReportType, ESGRatings } from '../features/due-diligence/types';
 
 interface MCPClient {
-  executeResource: (name: string, params: any) => Promise<any>;
-  callTool: (name: string, params: any) => Promise<any>;
-  subscribe: (callback: (data: any) => void) => void;
+  executeResource: (name: string, params: Record<string, unknown>) => Promise<unknown>;
+  callTool: (name: string, params: Record<string, unknown>) => Promise<unknown>;
+  subscribe: (callback: (data: unknown) => void) => void;
 }
 
 interface MCPState {
@@ -39,35 +40,34 @@ export const useMCP = () => {
 
     // Create MCP client instance
     const mcpClient: MCPClient = {
-      executeResource: async (name: string, params: any) => {
+      executeResource: async (name: string, params: Record<string, unknown>): Promise<unknown> => {
         setState(prev => ({ ...prev, loading: true, error: null }));
         try {
           const executeResourceFn = httpsCallable(functions, 'mcpExecuteResource');
           const result = await executeResourceFn({ name, params });
-          setState(prev => ({ ...prev, loading: false, connected: true }));
           return result.data;
-        } catch (error) {
+        } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           setState(prev => ({ ...prev, loading: false, error: errorMessage }));
           throw error;
         }
       },
 
-      callTool: async (name: string, params: any) => {
+      callTool: async (name: string, params: Record<string, unknown>): Promise<unknown> => {
         setState(prev => ({ ...prev, loading: true, error: null }));
         try {
           const callToolFn = httpsCallable(functions, 'mcpCallTool');
           const result = await callToolFn({ name, params });
           setState(prev => ({ ...prev, loading: false, connected: true }));
           return result.data;
-        } catch (error) {
+        } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           setState(prev => ({ ...prev, loading: false, error: errorMessage }));
           throw error;
         }
       },
 
-      subscribe: (callback: (data: any) => void) => {
+      subscribe: (callback: (data: unknown) => void) => {
         // WebSocket connection for real-time updates
         const ws = new WebSocket(`wss://${firebaseConfig.authDomain}/mcp-stream`);
         ws.onmessage = (event) => {
@@ -81,27 +81,27 @@ export const useMCP = () => {
     setClient(mcpClient);
   }, []);
 
-  const analyzeStock = useCallback(async (symbol: string, period: string = '1d') => {
+  const analyzeStock = useCallback(async (symbol: string, period: string = '1d'): Promise<StockAnalysis> => {
     if (!client) throw new Error('MCP client not initialized');
-    return client.executeResource('stock_analysis', { symbol, period });
+    return client.executeResource('stock_analysis', { symbol, period }) as Promise<StockAnalysis>;
   }, [client]);
 
-  const generateDueDiligenceReport = useCallback(async (companyName: string, options: any = {}) => {
+  const generateDueDiligenceReport = useCallback(async (companyName: string, options: ReportGenerationOptions = {}): Promise<DueDiligenceReportType> => {
     if (!client) throw new Error('MCP client not initialized');
-    return client.callTool('due_diligence_report', { companyName, ...options });
+    return client.callTool('due_diligence_report', { companyName, ...options }) as Promise<DueDiligenceReportType>;
   }, [client]);
 
-  const getRealTimeAlerts = useCallback(async (portfolioId: string) => {
+  const getRealTimeAlerts = useCallback(async (portfolioId: string): Promise<{ alerts: Alert[] }> => {
     if (!client) throw new Error('MCP client not initialized');
-    return client.executeResource('real_time_alerts', { portfolioId });
+    return client.executeResource('real_time_alerts', { portfolioId }) as Promise<{ alerts: Alert[] }>;
   }, [client]);
 
-  const getESGRatings = useCallback(async (symbol: string) => {
+  const getESGRatings = useCallback(async (symbol: string): Promise<ESGRatings> => {
     if (!client) throw new Error('MCP client not initialized');
-    return client.executeResource('esg_ratings', { symbol });
+    return client.executeResource('esg_ratings', { symbol }) as Promise<ESGRatings>;
   }, [client]);
 
-  const getSECFilings = useCallback(async (symbol: string, filingType: string = '10-K') => {
+  const getSECFilings = useCallback(async (symbol: string, filingType: string = '10-K'): Promise<unknown> => {
     if (!client) throw new Error('MCP client not initialized');
     return client.executeResource('sec_filings', { symbol, filingType });
   }, [client]);

@@ -26,9 +26,13 @@ export const AuthDemo: React.FC<AuthDemoProps> = ({ children }) => {
       setError(null);
       await signInAnonymously(auth);
       console.log('Anonymous login successful');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Demo login failed:', error);
-      setError(error.message || 'Login failed. Please enable Anonymous authentication in Firebase Console.');
+      let errorMessage = 'Login failed. Please enable Anonymous authentication in Firebase Console.';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      setError(errorMessage);
       setLoading(false);
     }
   };
