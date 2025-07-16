@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
+import app from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ReportGenerationOptions, DueDiligenceReportType, ESGRatings } from '../features/due-diligence/types';
 
@@ -26,16 +26,6 @@ export const useMCP = () => {
 
   useEffect(() => {
     // Initialize Firebase if not already done
-    const firebaseConfig = {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID
-    };
-
-    const app = initializeApp(firebaseConfig);
     const functions = getFunctions(app);
 
     // Create MCP client instance
@@ -68,13 +58,9 @@ export const useMCP = () => {
       },
 
       subscribe: (callback: (data: unknown) => void) => {
-        // WebSocket connection for real-time updates
-        const ws = new WebSocket(`wss://${firebaseConfig.authDomain}/mcp-stream`);
-        ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          callback(data);
-        };
-        return () => ws.close();
+        // WebSocket connection for real-time updates (currently not implemented)
+        console.warn("WebSocket subscription is not yet implemented.");
+        return () => {}; // Return a no-op unsubscribe function
       }
     };
 

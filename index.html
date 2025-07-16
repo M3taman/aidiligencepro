@@ -10,14 +10,16 @@
       body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     </style>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; 
-      connect-src 'self' https://*.firebase.com https://*.firebaseio.com https://fonts.googleapis.com https://fonts.gstatic.com https://www.google-analytics.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://www.alphavantage.co https://api.sec-api.io https://api.aimlapi.com; 
+      connect-src 'self' https://*.firebase.com https://*.firebaseio.com https://fonts.googleapis.com https://fonts.gstatic.com https://www.google-analytics.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://www.alphavantage.co https://api.sec-api.io https://api.aimlapi.com https://www.paypal.com; 
       font-src 'self' https://fonts.gstatic.com; 
       style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
-      script-src 'self' 'unsafe-inline' 'unsafe-eval'; 
-      img-src 'self' data: https:;">
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.paypal.com; 
+      img-src 'self' data: https:;
+      frame-src 'self' https://www.paypal.com;">
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=AQssVsG_YrsgV2JzMc4CQK_VhpYgfR00tT1752ZcDG_qu7BMP6slb39SjZ1GrbeG_j6lwleZnD-n44qi&vault=true&intent=subscription"></script>
   </body>
 </html>

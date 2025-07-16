@@ -1,43 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect } from 'react';
 
-interface EventData<T> {
-  data: T;
-  event?: string;
-}
-
-export function useEventSource<T = unknown>(
-  url: string | null,
-  { start = true }: { start?: boolean } = {}
-) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
+export const useEventSource = (url: string) => {
+  const [data, setData] = useState(null);
 
   useEffect(() => {
-    if (!url || !start) return;
+    const eventSource = new EventSource(url);
 
-    const es = new EventSource(url);
-    esRef.current = es;
-
-    es.onopen = () => setIsOpen(true);
-    es.onerror = (e) => {
-      setIsOpen(false);
-      setError("Connection lost");
-    };
-    es.onmessage = (e) => {
-      try {
-        const parsed: EventData<T> = JSON.parse(e.data);
-        setData(parsed.data);
-      } catch {
-        // non-json, ignore
-      }
+    eventSource.onmessage = (event) => {
+      setData(JSON.parse(event.data));
     };
 
     return () => {
-      es.close();
+      eventSource.close();
     };
-  }, [url, start]);
+  }, [url]);
 
-  return { data, error, isOpen };
-}
+  return data;
+};
