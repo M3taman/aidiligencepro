@@ -1,20 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "stock_data",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "symbol",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "timestamp",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "due_diligence_reports",
       "queryScope": "COLLECTION",
       "fields": [
@@ -23,7 +9,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "generatedAt",
+          "fieldPath": "createdAt",
           "order": "DESCENDING"
         }
       ]
@@ -38,6 +24,20 @@
         },
         {
           "fieldPath": "lastUpdated",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "stock_data",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "symbol",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
           "order": "DESCENDING"
         }
       ]
