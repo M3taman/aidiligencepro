@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import app from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { ReportGenerationOptions, DueDiligenceReportType, ESGRatings } from '../features/due-diligence/types';
+import { ReportGenerationOptions, DueDiligenceReportType, ESGRatings, StockAnalysis, Alert } from '../types';
 
 interface MCPClient {
   executeResource: (name: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -57,7 +57,7 @@ export const useMCP = () => {
         }
       },
 
-      subscribe: (callback: (data: unknown) => void) => {
+      subscribe: (_callback: (data: unknown) => void) => {
         // WebSocket connection for real-time updates (currently not implemented)
         console.warn("WebSocket subscription is not yet implemented.");
         return () => {}; // Return a no-op unsubscribe function

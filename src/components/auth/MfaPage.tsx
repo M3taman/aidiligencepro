@@ -1,86 +1,136 @@
-import React, { useState } from 'react';
-import { getAuth, multiFactor, PhoneAuthProvider, PhoneMultiFactorGenerator } from 'firebase/auth';
+import { useState } from 'react';
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
+import app from '../../firebase';
 
 const MfaPage = () => {
-    const [verificationId, setVerificationId] = useState('');
-    const [verificationCode, setVerificationCode] = useState('');
-    const [error, setError] = useState('');
-    const [isEnrolled, setIsEnrolled] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationId, setVerificationId] = useState('');
+  const [step, setStep] = useState<'phone' | 'code'>('phone');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-    const auth = getAuth();
-    const user = auth.currentUser;
+  const auth = getAuth(app);
 
-    const handleEnroll = async () => {
-        if (!user) return;
-
-        const session = await multiFactor(user).getSession();
-        const phoneInfoOptions = {
-            phoneNumber: '+16505551234', // Replace with user's phone number
-            session
-        };
-
-        const phoneAuthProvider = new PhoneAuthProvider(auth);
-        const verificationId = await phoneAuthProvider.verifyPhoneNumber(phoneInfoOptions, {
-            onVerificationCompleted: () => { },
-            onVerificationFailed: (error) => setError(error.message),
-            onCodeSent: (verificationId) => setVerificationId(verificationId),
-            onCodeAutoRetrievalTimeout: () => { }
-        });
-    };
-
-    const handleVerify = async () => {
-        if (!user) return;
-
-        const cred = PhoneAuthProvider.credential(verificationId, verificationCode);
-        const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
-
-        try {
-            await multiFactor(user).enroll(multiFactorAssertion, 'My personal phone');
-            setIsEnrolled(true);
-        } catch (error: unknown) {
-            if (error instanceof Error) {
-                setError(error.message);
-            }
+  const setupRecaptcha = () => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => {
+          // reCAPTCHA solved, allow signInWithPhoneNumber
+        },
+        'expired-callback': () => {
+          setError('reCAPTCHA expired. Please try again.');
         }
-    };
-
-    if (isEnrolled) {
-        return (
-            <div className="container mx-auto px-6 py-12">
-                <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-8">
-                    <h2 className="text-3xl font-bold text-center text-gray-800 mb-6">MFA Enrolled</h2>
-                    <p className="text-center">You have successfully enrolled in multi-factor authentication.</p>
-                </div>
-            </div>
-        );
+      });
     }
+  };
 
-    return (
-        <div className="container mx-auto px-6 py-12">
-            <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-8">
-                <h2 className="text-3xl font-bold text-center text-gray-800 mb-6">Set up MFA</h2>
-                {!verificationId ? (
-                    <button onClick={handleEnroll} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-                        Enroll in MFA
-                    </button>
-                ) : (
-                    <div>
-                        <input
-                            type="text"
-                            value={verificationCode}
-                            onChange={(e) => setVerificationCode(e.target.value)}
-                            placeholder="Verification Code"
-                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mb-4"
-                        />
-                        <button onClick={handleVerify} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-                            Verify
-                        </button>
-                    </div>
-                )}
-                {error && <p className="text-red-500 text-xs italic mt-4">{error}</p>}
-            </div>
+  const sendVerificationCode = async () => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      setupRecaptcha();
+      const appVerifier = window.recaptchaVerifier;
+      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+      setVerificationId(confirmationResult.verificationId);
+      setStep('code');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send verification code';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyCode = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
+      await signInWithCredential(auth, credential);
+      // User is now signed in
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Invalid verification code';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="max-w-md w-full space-y-8 p-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold">
+            Multi-Factor Authentication
+          </h2>
         </div>
-    );
+        
+        {step === 'phone' ? (
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="phone" className="block text-sm font-medium">
+                Phone Number
+              </label>
+              <input
+                id="phone"
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="+1234567890"
+                className="mt-1 block w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            
+            {error && (
+              <div className="text-red-400 text-sm">{error}</div>
+            )}
+            
+            <button
+              onClick={sendVerificationCode}
+              disabled={loading || !phoneNumber}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-500"
+            >
+              {loading ? 'Sending...' : 'Send Verification Code'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="code" className="block text-sm font-medium">
+                Verification Code
+              </label>
+              <input
+                id="code"
+                type="text"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                placeholder="123456"
+                className="mt-1 block w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            
+            {error && (
+              <div className="text-red-400 text-sm">{error}</div>
+            )}
+            
+            <button
+              onClick={verifyCode}
+              disabled={loading || !verificationCode}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-500"
+            >
+              {loading ? 'Verifying...' : 'Verify Code'}
+            </button>
+          </div>
+        )}
+        
+        <div id="recaptcha-container"></div>
+      </div>
+    </div>
+  );
 };
 
 export default MfaPage;

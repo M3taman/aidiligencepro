@@ -18,6 +18,12 @@ import MfaPage from './components/auth/MfaPage';
 import MCPDashboard from './components/dashboard/MCPDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 
+declare global {
+  interface Window {
+    recaptchaVerifier: any;
+  }
+}
+
 function App() {
   return (
     <ErrorBoundary>
