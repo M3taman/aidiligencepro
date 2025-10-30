@@ -1,27 +1,7 @@
 import * as functions from "firebase-functions";
 import * as logger from "firebase-functions/logger";
-import { getFirestore } from "firebase-admin/firestore";
 import { onCall } from 'firebase-functions/v2/https';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-
-async function generatePdfReport(reportText: string): Promise<string> {
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage();
-  const { width, height } = page.getSize();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontSize = 12;
-
-  page.drawText(reportText, {
-    x: 50,
-    y: height - 4 * fontSize,
-    font,
-    fontSize,
-    color: rgb(0, 0, 0),
-  });
-
-  const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes).toString('base64');
-}
 
 export const generateReport = onCall(async (request) => {
   try {
@@ -34,7 +14,7 @@ export const generateReport = onCall(async (request) => {
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage();
 
-    const { width, height } = page.getSize();
+    const { height } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontSize = 12;
 
@@ -88,7 +68,7 @@ export const generateReport = onCall(async (request) => {
 
     return { pdf: Buffer.from(pdfBytes).toString('base64') };
   } catch (error) {
-    logger.error('Error generating PDF report:', error);
+    logger.error('Error generating PDF report:', error as Error);
     throw new functions.https.HttpsError('internal', 'Failed to generate PDF report');
   }
 });
