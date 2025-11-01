@@ -1,27 +1,22 @@
-module.exports = {
-  root: true,
-  env: {
-    browser: true,
-    es2020: true,
-    node: true,
+{
+  "root": true,
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended", "plugin:react/recommended"],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "module",
+    "ecmaFeatures": { "jsx": true }
   },
-  extends: [
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'plugin:react-hooks/recommended',
-  ],
-  ignorePatterns: ['dist', '.eslintrc.cjs', 'functions'],
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-  },
-  plugins: ['react-refresh', '@typescript-eslint'],
-  rules: {
-    'react-refresh/only-export-components': [
-      'warn',
-      { allowConstantExport: true },
+  "plugins": ["@typescript-eslint", "react"],
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "TSAsExpression[expression.type='Identifier'][typeAnnotation.type='TSAnyKeyword']",
+        "message": "Avoid casting to 'any' with 'as any'. Prefer proper types or a typed helper."
+      }
     ],
-    '@typescript-eslint/no-unused-vars': 'off',
+    "@typescript-eslint/no-explicit-any": ["warn", { "ignoreRestArgs": true }]
   },
-};
+  "settings": { "react": { "version": "detect" } }
+}
